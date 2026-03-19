@@ -1,0 +1,485 @@
+---
+title: ReactiveElement
+description: Base class for reactive custom elements. Manages properties, attributes, and the async update lifecycle.
+---
+
+## Overview
+
+`ReactiveElement` is the low-level base class that powers `LitElement`. It extends `HTMLElement` and implements the reactive update lifecycle, property/attribute management, and controller integration. Use this package when you want to build your own component base class without `lit-html` templating.
+
+```typescript
+import {ReactiveElement} from '@lit/reactive-element';
+```
+
+**Package:** `@lit/reactive-element`  
+**Extends:** `HTMLElement`  
+**Implements:** `ReactiveControllerHost`
+
+---
+
+## Static members
+
+### `observedAttributes`
+
+```typescript
+static get observedAttributes(): string[]
+```
+
+Returns the list of attribute names that correspond to registered reactive properties. Automatically derived from the `properties` declaration. Calling this getter also triggers `finalize()` if it has not already run.
+
+---
+
+### `properties`
+
+```typescript
+static properties: PropertyDeclarations
+```
+
+A map of property names to `PropertyDeclaration` options. Declaring a property here creates a reactive accessor that requests an update whenever the property is set.
+
+```typescript
+class MyElement extends ReactiveElement {
+  static properties = {
+    name: {type: String},
+    count: {type: Number, reflect: true},
+    active: {type: Boolean, state: true},
+  };
+}
+```
+
+---
+
+### `styles`
+
+```typescript
+static styles?: CSSResultGroup
+```
+
+Styles to apply to the element's shadow root. Accepts a `CSSResult` (from the `css` tag), a `CSSStyleSheet`, or an array of either.
+
+```typescript
+static styles = [
+  css`:host { display: block; }`,
+  css`p { margin: 0; }`,
+];
+```
+
+---
+
+### `elementStyles`
+
+```typescript
+static elementStyles: Array<CSSResultOrNative>
+```
+
+The resolved, deduplicated list of styles computed from `styles`. Created lazily during `finalize()`. Override `finalizeStyles()` to customize how styles are processed.
+
+---
+
+### `shadowRootOptions`
+
+```typescript
+static shadowRootOptions: ShadowRootInit
+```
+
+Options passed to `attachShadow()` when creating the element's shadow root. Defaults to `{mode: 'open'}`.
+
+```typescript
+class MyElement extends ReactiveElement {
+  static shadowRootOptions = {mode: 'closed' as const};
+}
+```
+
+---
+
+### `addInitializer()`
+
+```typescript
+static addInitializer(initializer: Initializer): void
+```
+
+Registers a function to run during each instance's construction. Useful for decorators and other class-level integrations that need per-instance setup, such as attaching a `ReactiveController`.
+
+<ParamField path="initializer" type="(element: ReactiveElement) => void" required>
+  A function called with the newly constructed element instance.
+</ParamField>
+
+```typescript
+const myDecorator = (target: typeof ReactiveElement) => {
+  target.addInitializer((instance) => {
+    new MyController(instance);
+  });
+};
+```
+
+Initializers are stored per constructor. Subclass initializers run after superclass initializers.
+
+---
+
+### `finalize()`
+
+```typescript
+protected static finalize(): void
+```
+
+Completes class setup: processes the `properties` block, reads decorator metadata, builds the attribute-to-property map, and resolves `elementStyles`. Called automatically via `observedAttributes`. You should not need to call this directly.
+
+---
+
+## Instance properties
+
+### `updateComplete`
+
+```typescript
+get updateComplete(): Promise<boolean>
+```
+
+Resolves when the element has finished updating. The resolved value is `true` if the update completed without triggering another update, or `false` if a property was set inside `updated()`. The promise rejects if an exception is thrown during the update.
+
+To await additional async work after an update, override `getUpdateComplete()`.
+
+```typescript
+await this.updateComplete;
+// DOM is now fully updated
+```
+
+---
+
+### `hasUpdated`
+
+```typescript
+hasUpdated: boolean
+```
+
+`true` after the element's first update completes. You can rely on `renderRoot` existing once `hasUpdated` is `true`.
+
+---
+
+### `isUpdatePending`
+
+```typescript
+isUpdatePending: boolean
+```
+
+`true` when an update has been requested but has not yet completed. Read-only in practice.
+
+---
+
+## Instance methods
+
+### `requestUpdate()`
+
+```typescript
+requestUpdate(
+  name?: PropertyKey,
+  oldValue?: unknown,
+  options?: PropertyDeclaration
+): void
+```
+
+Requests an asynchronous element update. Call with no arguments to trigger an update outside of a property change. When called from a manual property setter, pass the property name and old value so that the `hasChanged` option and `changedProperties` map are handled correctly.
+
+<ParamField path="name" type="PropertyKey">
+  The name of the property that changed.
+</ParamField>
+
+<ParamField path="oldValue" type="unknown">
+  The previous value of the property.
+</ParamField>
+
+<ParamField path="options" type="PropertyDeclaration">
+  Property declaration options to use instead of the class-level options.
+</ParamField>
+
+---
+
+### `performUpdate()`
+
+```typescript
+protected performUpdate(): void
+```
+
+Executes a pending update synchronously. Calls `shouldUpdate()`, `willUpdate()`, `update()`, `firstUpdated()` (on first update), and `updated()`. Normally runs as a microtask; call directly only when you need to flush an update immediately.
+
+---
+
+### `scheduleUpdate()`
+
+```typescript
+protected scheduleUpdate(): void | Promise<unknown>
+```
+
+Called to schedule the update. Override to change update timing — for example, to defer updates until the next animation frame. If you return a `Promise`, the update awaits it before proceeding. Must call `super.scheduleUpdate()`.
+
+```typescript
+protected override async scheduleUpdate(): Promise<unknown> {
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  return super.scheduleUpdate();
+}
+```
+
+---
+
+### `shouldUpdate()`
+
+```typescript
+protected shouldUpdate(changedProperties: PropertyValues): boolean
+```
+
+Controls whether `update()` runs. Returns `true` by default. Override to conditionally skip updates.
+
+<ParamField path="changedProperties" type="PropertyValues">
+  Map of properties that changed, with their previous values.
+</ParamField>
+
+<ResponseField name="returns" type="boolean">
+  Return `true` to proceed with the update, `false` to abort.
+</ResponseField>
+
+---
+
+### `willUpdate()`
+
+```typescript
+protected willUpdate(changedProperties: PropertyValues): void
+```
+
+Called before `update()`. Use this to compute derived values that are needed during the update. Does not have access to the updated DOM.
+
+<ParamField path="changedProperties" type="PropertyValues">
+  Map of properties that changed, with their previous values.
+</ParamField>
+
+```typescript
+protected willUpdate(changed: PropertyValues<this>) {
+  if (changed.has('firstName') || changed.has('lastName')) {
+    this.fullName = `${this.firstName} ${this.lastName}`;
+  }
+}
+```
+
+---
+
+### `update()`
+
+```typescript
+protected update(changedProperties: PropertyValues): void
+```
+
+Applies property values to the DOM. The default implementation reflects properties to attributes. Override in subclasses (such as `LitElement`) to render templates. Setting properties inside `update()` does not trigger another update.
+
+<ParamField path="changedProperties" type="PropertyValues">
+  Map of properties that changed, with their previous values.
+</ParamField>
+
+---
+
+### `firstUpdated()`
+
+```typescript
+protected firstUpdated(changedProperties: PropertyValues): void
+```
+
+Called after the element's first update. Use this for one-time DOM setup, such as focusing an element or initializing a third-party library.
+
+<ParamField path="changedProperties" type="PropertyValues">
+  Map of properties that changed, with their previous values.
+</ParamField>
+
+```typescript
+protected firstUpdated() {
+  this.renderRoot.querySelector('input')?.focus();
+}
+```
+
+---
+
+### `updated()`
+
+```typescript
+protected updated(changedProperties: PropertyValues): void
+```
+
+Called after every update. Use this to perform tasks that require the updated DOM. Setting properties here triggers another update after the current cycle completes.
+
+<ParamField path="changedProperties" type="PropertyValues">
+  Map of properties that changed, with their previous values.
+</ParamField>
+
+---
+
+### `getUpdateComplete()`
+
+```typescript
+protected getUpdateComplete(): Promise<boolean>
+```
+
+The override point for the `updateComplete` promise. Override this instead of the getter to await additional async work after an update completes.
+
+```typescript
+protected override async getUpdateComplete(): Promise<boolean> {
+  const result = await super.getUpdateComplete();
+  await this._childElement.updateComplete;
+  return result;
+}
+```
+
+<ResponseField name="returns" type="Promise<boolean>">
+  Resolves to `true` if the update completed without scheduling a further update.
+</ResponseField>
+
+---
+
+### `addController()`
+
+```typescript
+addController(controller: ReactiveController): void
+```
+
+Registers a `ReactiveController` with this element. The controller's lifecycle callbacks are called in sync with the element's lifecycle. If the element is already connected, `hostConnected()` is called immediately.
+
+<ParamField path="controller" type="ReactiveController" required>
+  The controller instance to register.
+</ParamField>
+
+---
+
+### `removeController()`
+
+```typescript
+removeController(controller: ReactiveController): void
+```
+
+Removes a previously registered `ReactiveController` from this element.
+
+<ParamField path="controller" type="ReactiveController" required>
+  The controller instance to remove.
+</ParamField>
+
+---
+
+## Types
+
+### `PropertyDeclaration`
+
+Options that configure how a reactive property behaves.
+
+```typescript
+interface PropertyDeclaration<Type = unknown, TypeHint = unknown> {
+  readonly state?: boolean;
+  readonly attribute?: boolean | string;
+  readonly type?: TypeHint;
+  readonly converter?: AttributeConverter<Type, TypeHint>;
+  readonly reflect?: boolean;
+  readonly noAccessor?: boolean;
+  useDefault?: boolean;
+  hasChanged?(value: Type, oldValue: Type): boolean;
+}
+```
+
+<ResponseField name="state" type="boolean">
+  When `true`, the property is internal state. It is not observed as an attribute and should not be set by users.
+</ResponseField>
+
+<ResponseField name="attribute" type="boolean | string">
+  The attribute name to observe. `false` disables attribute observation. Defaults to the lowercased property name.
+</ResponseField>
+
+<ResponseField name="type" type="TypeHint">
+  A type hint passed to the `converter` to help deserialize the attribute value. Supports `String`, `Number`, `Boolean`, `Object`, and `Array`.
+</ResponseField>
+
+<ResponseField name="converter" type="AttributeConverter">
+  A function or object with `fromAttribute` and `toAttribute` methods. Converts between attribute strings and property values.
+</ResponseField>
+
+<ResponseField name="reflect" type="boolean">
+  When `true`, the property value is reflected back to the corresponding attribute after each update.
+</ResponseField>
+
+<ResponseField name="noAccessor" type="boolean">
+  When `true`, no reactive accessor is created. You must call `requestUpdate()` manually when the property changes.
+</ResponseField>
+
+<ResponseField name="useDefault" type="boolean">
+  When `true`, treats the initial property value as a default. The initial value does not reflect to an attribute. When the attribute is removed, the property reverts to this default.
+</ResponseField>
+
+<ResponseField name="hasChanged" type="(value, oldValue) => boolean">
+  Custom change detection function. Return `true` to request an update. Defaults to a strict identity check (`!Object.is(value, oldValue)`).
+</ResponseField>
+
+---
+
+### `PropertyDeclarations`
+
+```typescript
+interface PropertyDeclarations {
+  readonly [key: string]: PropertyDeclaration;
+}
+```
+
+A map of property names to their `PropertyDeclaration` options. Assigned to `static properties`.
+
+---
+
+### `PropertyValues`
+
+```typescript
+type PropertyValues<T = any> = T extends object
+  ? PropertyValueMap<T>
+  : Map<PropertyKey, unknown>;
+```
+
+A map of property keys to their previous values, passed to lifecycle methods. Use `PropertyValues<this>` in subclass overrides for stronger typing.
+
+```typescript
+protected updated(changed: PropertyValues<this>) {
+  if (changed.has('src')) {
+    this._loadImage(this.src);
+  }
+}
+```
+
+---
+
+### `AttributeConverter`
+
+```typescript
+type AttributeConverter<Type = unknown, TypeHint = unknown> =
+  | ComplexAttributeConverter<Type>
+  | ((value: string | null, type?: TypeHint) => Type);
+
+interface ComplexAttributeConverter<Type = unknown, TypeHint = unknown> {
+  fromAttribute?(value: string | null, type?: TypeHint): Type;
+  toAttribute?(value: Type, type?: TypeHint): unknown;
+}
+```
+
+Converts between attribute strings and property values. A function form handles only `fromAttribute`. The object form supports both directions, which is required when using `reflect: true`.
+
+```typescript
+const dateConverter: AttributeConverter<Date | null> = {
+  fromAttribute: (value) => value ? new Date(value) : null,
+  toAttribute: (value) => value?.toISOString() ?? null,
+};
+```
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="ReactiveController" icon="plug" href="/api/reactive-controller">
+    Interface for composable lifecycle integrations.
+  </Card>
+  <Card title="Reactive properties" icon="rotate" href="/concepts/reactive-properties">
+    How property declarations work in practice.
+  </Card>
+  <Card title="Lifecycle" icon="arrow-rotate-right" href="/concepts/lifecycle">
+    Full update lifecycle sequence.
+  </Card>
+  <Card title="LitElement" icon="cube" href="/api/lit-element">
+    The full-featured component base class built on `ReactiveElement`.
+  </Card>
+</CardGroup>

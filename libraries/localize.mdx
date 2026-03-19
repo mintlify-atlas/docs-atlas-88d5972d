@@ -1,0 +1,283 @@
+---
+title: "Localize"
+description: "Translate strings and templates in Lit components using @lit/localize."
+---
+
+## Overview
+
+`@lit/localize` provides first-class localization for Lit templates. It supports both plain strings and lit-html `TemplateResult` values (including embedded expressions), letting translators preserve markup structure without touching JavaScript.
+
+The library ships in two modes:
+
+| Mode | How it works | Best for |
+|---|---|---|
+| **Runtime** | Loads translation bundles on demand; supports dynamic locale switching | Apps that need live locale changes without a full reload |
+| **Transform** | A build step rewrites `msg()` calls with the translated strings; `@localized` decorators are removed | Minimal runtime overhead; one bundle per locale |
+
+The `@lit/localize-tools` package provides the `lit-localize` CLI used for both modes.
+
+## Installation
+
+```bash
+npm install @lit/localize
+```
+
+For the CLI (extraction and build tooling):
+
+```bash
+npm install --save-dev @lit/localize-tools
+```
+
+## Marking strings for translation
+
+### msg()
+
+`msg()` marks a string or template for extraction and translation. It is the primary API of `@lit/localize`.
+
+```typescript
+declare function msg(template: string, options?: MsgOptions): string;
+declare function msg(template: StrResult, options?: MsgOptions): string;
+declare function msg(template: TemplateResult, options?: MsgOptions): TemplateResult;
+```
+
+`MsgOptions` accepts an optional `id` (a stable project-wide identifier) and an optional `desc` (a hint for translators):
+
+```typescript
+interface MsgOptions {
+  id?: string;   // stable identifier; auto-generated if omitted
+  desc?: string; // translator note
+}
+```
+
+### Plain strings
+
+```typescript
+import {msg} from '@lit/localize';
+
+// Simple string
+const label = msg('Save changes');
+
+// With explicit id and description
+const label = msg('Save changes', {
+  id: 'save-button-label',
+  desc: 'Label for the save button in the toolbar',
+});
+```
+
+### str\`\` tag — strings with expressions
+
+Untagged template literals with expressions (`\`Hello ${name}\``) cannot be used with `msg()` because the values cannot be captured at runtime. Use the `str` tag instead:
+
+```typescript
+import {msg, str} from '@lit/localize';
+
+const greeting = msg(str`Hello ${this.userName}!`);
+```
+
+The `str` tag returns a `StrResult` that `msg()` can interpolate into the translation.
+
+### html\`\` tag — template translations
+
+Use the standard lit-html `html` tag for templates that contain markup. Translators can reorder expressions but cannot break the HTML structure:
+
+```typescript
+import {msg} from '@lit/localize';
+import {html} from 'lit';
+
+render() {
+  return msg(html`Welcome back, <b>${this.userName}</b>!`);
+}
+```
+
+<Tip>
+  Prefer `str` over `html` for strings that contain no markup. `html` has a small parsing overhead and requires HTML-escaping of dynamic values.
+</Tip>
+
+## Configuring components to re-render on locale change
+
+### @localized() decorator
+
+Apply `@localized()` to a `LitElement` class to make it automatically re-render whenever the active locale changes:
+
+```typescript
+import {LitElement, html} from 'lit';
+import {customElement} from 'lit/decorators.js';
+import {msg, localized} from '@lit/localize';
+
+@localized()
+@customElement('my-greeting')
+class MyGreeting extends LitElement {
+  render() {
+    return html`<p>${msg('Hello, world!')}</p>`;
+  }
+}
+```
+
+In transform mode, the compiler removes `@localized()` and replaces `msg()` calls with inlined translated strings — no runtime overhead.
+
+### updateWhenLocaleChanges()
+
+If you are not using decorators, call `updateWhenLocaleChanges` in the constructor instead:
+
+```typescript
+import {LitElement, html} from 'lit';
+import {customElement} from 'lit/decorators.js';
+import {msg, updateWhenLocaleChanges} from '@lit/localize';
+
+@customElement('my-greeting')
+class MyGreeting extends LitElement {
+  constructor() {
+    super();
+    updateWhenLocaleChanges(this);
+  }
+
+  render() {
+    return html`<p>${msg('Hello, world!')}</p>`;
+  }
+}
+```
+
+## Runtime mode
+
+Runtime mode lets you switch locales dynamically without a page reload.
+
+<Steps>
+  <Step title="Configure localization">
+    Call `configureLocalization()` once at app startup and save the returned helpers:
+
+    ```typescript
+    import {configureLocalization} from '@lit/localize';
+
+    export const {getLocale, setLocale} = configureLocalization({
+      sourceLocale: 'en',
+      targetLocales: ['es', 'fr', 'zh-Hans'],
+      loadLocale: (locale) => import(`/locales/${locale}.js`),
+    });
+    ```
+  </Step>
+
+  <Step title="Switch locales">
+    `setLocale()` loads the translation bundle and resolves when the locale is ready. All `@localized` components re-render automatically:
+
+    ```typescript
+    const button = document.querySelector('#lang-toggle');
+    button.addEventListener('click', async () => {
+      await setLocale('es');
+      console.log('Active locale:', getLocale()); // 'es'
+    });
+    ```
+  </Step>
+</Steps>
+
+### RuntimeConfiguration
+
+```typescript
+interface RuntimeConfiguration {
+  /** Locale code of the source templates (also the initial active locale). */
+  sourceLocale: string;
+  /** Locale codes this project supports (do not include sourceLocale). */
+  targetLocales: Iterable<string>;
+  /** Returns a Promise for the locale module at the given locale code. */
+  loadLocale: (locale: string) => Promise<LocaleModule>;
+}
+```
+
+### Locale status event
+
+The runtime dispatches a `lit-localize-status` event on `window` as locales load:
+
+```typescript
+window.addEventListener('lit-localize-status', (e) => {
+  const {status} = e.detail; // 'loading' | 'ready' | 'error'
+  if (status === 'ready') {
+    console.log('Locale ready:', e.detail.readyLocale);
+  }
+});
+```
+
+## Transform mode
+
+Transform mode produces the lowest possible runtime overhead. The `lit-localize` CLI rewrites your source files, replacing `msg()` calls with the translated literal and removing `@localized()` decorators.
+
+```json
+// lit-localize.json
+{
+  "$schema": "https://raw.githubusercontent.com/lit/lit/main/packages/localize-tools/config.schema.json",
+  "sourceLocale": "en",
+  "targetLocales": ["es", "fr"],
+  "tsConfig": "./tsconfig.json",
+  "output": {
+    "mode": "transform",
+    "outputDir": "./src/generated/locales"
+  },
+  "interchange": {
+    "format": "xliff",
+    "xliffDir": "./xliff"
+  }
+}
+```
+
+## Translation formats
+
+`@lit/localize-tools` supports two interchange formats:
+
+<CardGroup cols={2}>
+  <Card title="XLIFF" icon="file-code">
+    Industry-standard XML format. Compatible with professional translation tools like Phrase, Transifex, and Lokalise.
+  </Card>
+  <Card title="JSON" icon="braces">
+    Simpler format for use with custom tooling or translation services that accept JSON.
+  </Card>
+</CardGroup>
+
+## The lit-localize CLI
+
+Install `@lit/localize-tools` to get the `lit-localize` command:
+
+```bash
+npm install --save-dev @lit/localize-tools
+```
+
+| Command | Description |
+|---|---|
+| `lit-localize extract` | Scan source files and write XLIFF/JSON message files |
+| `lit-localize build` | Apply translations and output locale bundles |
+
+```bash
+# Extract messages from source
+npx lit-localize extract
+
+# Build translated bundles
+npx lit-localize build
+```
+
+Configure the CLI with a `lit-localize.json` file at the project root. See [the schema](https://raw.githubusercontent.com/lit/lit/main/packages/localize-tools/config.schema.json) for all options.
+
+## Complete example
+
+```typescript
+// src/my-app.ts
+import {LitElement, html} from 'lit';
+import {customElement, property} from 'lit/decorators.js';
+import {msg, str, localized, configureLocalization} from '@lit/localize';
+
+export const {getLocale, setLocale} = configureLocalization({
+  sourceLocale: 'en',
+  targetLocales: ['es', 'fr'],
+  loadLocale: (locale) => import(`./locales/${locale}.js`),
+});
+
+@localized()
+@customElement('my-app')
+class MyApp extends LitElement {
+  @property() userName = 'World';
+
+  render() {
+    return html`
+      <h1>${msg(html`Hello, <b>${this.userName}</b>!`)}</h1>
+      <p>${msg(str`Logged in as ${this.userName}.`)}</p>
+      <button @click=${() => setLocale('es')}>${msg('Switch to Spanish')}</button>
+    `;
+  }
+}
+```

@@ -1,0 +1,323 @@
+---
+title: Testing
+description: Testing Lit web components with Web Test Runner, @open-wc/testing, and @lit-labs/testing.
+---
+
+Lit components are standard custom elements and can be tested in a real browser environment using [Web Test Runner (WTR)](https://modern-web.dev/docs/test-runner/overview/). The starter templates include a complete test setup using WTR with Playwright launchers.
+
+## Setup
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install --save-dev @web/test-runner @web/test-runner-playwright @open-wc/testing
+    ```
+  </Step>
+
+  <Step title="Add a web-test-runner.config.js">
+    ```javascript web-test-runner.config.js
+    import {playwrightLauncher} from '@web/test-runner-playwright';
+
+    export default {
+      rootDir: '.',
+      files: ['./test/**/*_test.js'],
+      nodeResolve: true,
+      browsers: [
+        playwrightLauncher({product: 'chromium'}),
+        playwrightLauncher({product: 'firefox'}),
+        playwrightLauncher({product: 'webkit'}),
+      ],
+      testFramework: {
+        config: {
+          ui: 'tdd',
+          timeout: '60000',
+        },
+      },
+    };
+    ```
+  </Step>
+
+  <Step title="Add a test script to package.json">
+    ```json package.json
+    {
+      "scripts": {
+        "test": "wtr",
+        "test:watch": "wtr --watch"
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Writing tests with @open-wc/testing
+
+The `@open-wc/testing` package provides a `fixture` helper that renders a Lit template into the document and returns the top-level element. Use the `html` tag from `lit/static-html.js` (not from `lit`) when building fixture templates.
+
+```typescript test/my-element_test.ts
+import {MyElement} from '../my-element.js';
+import {fixture, assert} from '@open-wc/testing';
+import {html} from 'lit/static-html.js';
+
+suite('my-element', () => {
+  test('is defined', () => {
+    const el = document.createElement('my-element');
+    assert.instanceOf(el, MyElement);
+  });
+
+  test('renders with default values', async () => {
+    const el = await fixture(html`<my-element></my-element>`);
+    assert.shadowDom.equal(
+      el,
+      `
+        <h1>Hello, World!</h1>
+        <button part="button">Click Count: 0</button>
+        <slot></slot>
+      `
+    );
+  });
+
+  test('renders with a set name', async () => {
+    const el = await fixture(html`<my-element name="Test"></my-element>`);
+    assert.shadowDom.equal(
+      el,
+      `
+        <h1>Hello, Test!</h1>
+        <button part="button">Click Count: 0</button>
+        <slot></slot>
+      `
+    );
+  });
+});
+```
+
+<Info>
+`fixture()` appends the element to the document body, awaits the first render, and returns the element. It is asynchronous — always `await` it.
+</Info>
+
+## Testing reactive updates
+
+After changing a reactive property or simulating a user action, await `element.updateComplete` before making assertions. This promise resolves after the current update cycle finishes.
+
+```typescript
+test('handles a click', async () => {
+  const el = (await fixture(html`<my-element></my-element>`)) as MyElement;
+  const button = el.shadowRoot!.querySelector('button')!;
+  button.click();
+  await el.updateComplete;
+  assert.shadowDom.equal(
+    el,
+    `
+      <h1>Hello, World!</h1>
+      <button part="button">Click Count: 1</button>
+      <slot></slot>
+    `
+  );
+});
+```
+
+## Querying the shadow DOM
+
+Access elements inside a component's shadow root using `element.shadowRoot.querySelector`.
+
+```typescript
+test('styling applied', async () => {
+  const el = (await fixture(html`<my-element></my-element>`)) as MyElement;
+  await el.updateComplete;
+  assert.equal(getComputedStyle(el).paddingTop, '16px');
+});
+
+test('button text updates', async () => {
+  const el = (await fixture(html`<my-element></my-element>`)) as MyElement;
+  const button = el.shadowRoot!.querySelector('button')!;
+  assert.equal(button.textContent?.trim(), 'Click Count: 0');
+});
+```
+
+## Testing events
+
+Listen for custom events dispatched by the component. Attach the listener before triggering the action that fires the event.
+
+```typescript
+test('fires count-changed event', async () => {
+  const el = (await fixture(html`<my-element></my-element>`)) as MyElement;
+  let eventFired = false;
+
+  el.addEventListener('count-changed', () => {
+    eventFired = true;
+  });
+
+  el.shadowRoot!.querySelector('button')!.click();
+  await el.updateComplete;
+
+  assert.isTrue(eventFired);
+});
+
+test('count-changed detail has correct value', async () => {
+  const el = (await fixture(html`<my-element></my-element>`)) as MyElement;
+  let detail: {count: number} | undefined;
+
+  el.addEventListener('count-changed', (e: Event) => {
+    detail = (e as CustomEvent<{count: number}>).detail;
+  });
+
+  el.shadowRoot!.querySelector('button')!.click();
+  await el.updateComplete;
+
+  assert.deepEqual(detail, {count: 1});
+});
+```
+
+## Running in dev vs. prod mode
+
+The `lit-starter-ts` template separates dev and prod builds using an environment variable. The WTR config switches the `exportConditions` accordingly:
+
+```javascript web-test-runner.config.js
+const mode = process.env.MODE || 'dev';
+
+export default {
+  nodeResolve: {exportConditions: mode === 'dev' ? ['development'] : []},
+};
+```
+
+Add both test modes to your `package.json`:
+
+```json package.json
+{
+  "scripts": {
+    "test": "npm run test:dev && npm run test:prod",
+    "test:dev": "wtr",
+    "test:prod": "MODE=prod wtr"
+  }
+}
+```
+
+Running in `dev` mode loads Lit's development build, which includes extra runtime warnings.
+
+## Selecting browsers with Playwright
+
+The starter config defines launchers for Chromium, Firefox, and WebKit and reads the `BROWSERS` environment variable to select a subset:
+
+```javascript web-test-runner.config.js
+import {playwrightLauncher} from '@web/test-runner-playwright';
+
+const browsers = {
+  chromium: playwrightLauncher({product: 'chromium'}),
+  firefox: playwrightLauncher({product: 'firefox'}),
+  webkit: playwrightLauncher({product: 'webkit'}),
+};
+
+const commandLineBrowsers = process.env.BROWSERS?.split(',').map(
+  (b) => browsers[b]
+);
+
+export default {
+  browsers: commandLineBrowsers ?? Object.values(browsers),
+};
+```
+
+Run tests only in Chromium:
+
+```bash
+BROWSERS=chromium npm test
+```
+
+## @lit-labs/testing for SSR fixture testing
+
+`@lit-labs/testing` is a Lit Labs package that adds fixtures for testing components rendered server-side (SSR), with and without hydration.
+
+<Warning>
+`@lit-labs/testing` is part of Lit Labs. It is published for feedback and may receive breaking changes. Read the [Lit Labs documentation](https://lit.dev/docs/libraries/labs/) before using it in production.
+</Warning>
+
+### Installation
+
+```bash
+npm install --save-dev @lit-labs/testing
+```
+
+Add the WTR plugin to your config:
+
+```javascript web-test-runner.config.js
+import {litSsrPlugin} from '@lit-labs/testing/web-test-runner-ssr-plugin.js';
+
+export default {
+  plugins: [litSsrPlugin()],
+};
+```
+
+### ssrFixture
+
+Renders the template on the server and loads it into the browser document.
+
+```javascript my-element.test.js
+import {ssrFixture} from '@lit-labs/testing/fixtures.js';
+import {html} from 'lit';
+import {assert} from '@esm-bundle/chai';
+
+// Import fixtures BEFORE element definitions
+import {ssrFixture} from '@lit-labs/testing/fixtures.js';
+
+suite('my-element SSR', () => {
+  test('is rendered server-side', async () => {
+    const el = await ssrFixture(html`<my-element></my-element>`, {
+      modules: ['./my-element.js'],
+    });
+    assert.equal(
+      el.shadowRoot.querySelector('h1').textContent,
+      'Hello, World!'
+    );
+  });
+});
+```
+
+`ssrFixture` accepts an options object:
+
+| Option | Type | Description |
+|---|---|---|
+| `modules` | `string[]` | Relative paths to modules to load before rendering (usually custom element definitions). |
+| `base` | `string` | Base URL for resolving `modules`. Defaults to the call site URL. |
+| `hydrate` | `boolean` | Whether to hydrate after loading. Defaults to `true`. |
+
+### csrFixture, ssrNonHydratedFixture, ssrHydratedFixture
+
+These three fixtures have the same call signature, letting you run the same test with different rendering strategies:
+
+```javascript
+import {
+  csrFixture,
+  ssrNonHydratedFixture,
+  ssrHydratedFixture,
+} from '@lit-labs/testing/fixtures.js';
+import {html} from 'lit';
+import {assert} from '@esm-bundle/chai';
+
+for (const fixture of [csrFixture, ssrNonHydratedFixture, ssrHydratedFixture]) {
+  suite(`my-element rendered with ${fixture.name}`, () => {
+    test('renders as expected', async () => {
+      const el = await fixture(html`<my-element></my-element>`, {
+        modules: ['./my-element.js'],
+      });
+      assert.equal(
+        el.shadowRoot.querySelector('h1').textContent,
+        'Hello, World!'
+      );
+    });
+  });
+}
+```
+
+### cleanupFixtures
+
+Call `cleanupFixtures()` in a teardown hook to remove the rendered element from the document:
+
+```javascript
+import {cleanupFixtures} from '@lit-labs/testing/fixtures.js';
+
+teardown(() => {
+  cleanupFixtures();
+});
+```
+
+<Note>
+Any `lit` imports, including custom element definitions, **must** come after the `@lit-labs/testing` fixture imports so that `@lit-labs/ssr-client/lit-element-hydrate-support.js` is loaded first.
+</Note>

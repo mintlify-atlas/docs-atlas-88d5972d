@@ -1,0 +1,247 @@
+---
+title: Hydration
+description: How to hydrate server-rendered Lit components on the client using @lit-labs/ssr-client, including LitElement auto-hydration, the DSD polyfill, and common pitfalls.
+---
+
+After the browser receives server-rendered HTML, **hydration** re-associates the existing DOM nodes with Lit's reactive system. Without hydration, the page is static — components cannot respond to user interaction or update their rendering.
+
+## What hydration means for web components
+
+When `@lit-labs/ssr` renders a Lit template it emits HTML comment markers (e.g., `<!--lit-part ...-->`) that encode the structure of the template. On the client, Lit's hydration routine walks the DOM, reads these markers, and reconstructs the internal `ChildPart` and `AttributePart` data structures that lit-html normally builds when it first renders into a container.
+
+After hydration, Lit treats the DOM exactly as if it had rendered it on the client. Subsequent calls to `render()` update only the parts of the DOM that changed.
+
+## Installing @lit-labs/ssr-client
+
+```bash
+npm install @lit-labs/ssr-client
+```
+
+## Hydrating a template with hydrate()
+
+The `hydrate()` function from `@lit-labs/ssr-client` hydrates a server-rendered container:
+
+```typescript
+import {hydrate} from '@lit-labs/ssr-client';
+
+function hydrate(
+  rootValue: unknown,
+  container: Element | DocumentFragment,
+  options?: Partial<RenderOptions>
+): void
+```
+
+- `rootValue` — the same template result (with the same data) that was used on the server.
+- `container` — the DOM element that was rendered into on the server.
+- `options` — optional `RenderOptions` (e.g., `host`, `renderBefore`).
+
+<Warning>
+You must call `hydrate()` with the **same template and data** that was used on the server. Mismatches cause a `Hydration value mismatch` error. See [common pitfalls](#common-pitfalls) below.
+</Warning>
+
+### Example
+
+```typescript
+// client.ts
+import {html} from 'lit';
+import {render} from 'lit';
+import {hydrate} from '@lit-labs/ssr-client';
+import {myTemplate} from './my-template.js';
+
+// Data must match what the server used
+const initialData = getInitialAppData();
+
+// Hydrate the server-rendered DOM
+hydrate(myTemplate(initialData), document.body);
+
+// After hydration, subsequent renders update efficiently
+const update = (data: typeof initialData) =>
+  render(myTemplate(data), document.body);
+```
+
+## Declarative Shadow DOM and the polyfill
+
+`LitElement` shadow roots are emitted as `<template shadowrootmode="open">` elements (Declarative Shadow DOM). Modern browsers parse these natively and attach shadow roots before JavaScript runs.
+
+For browsers that do not support DSD natively, apply the [`@webcomponents/template-shadowroot`](https://github.com/webcomponents/template-shadowroot) polyfill:
+
+```bash
+npm install @webcomponents/template-shadowroot
+```
+
+```typescript
+import {
+  hasNativeDeclarativeShadowRoots,
+  hydrateShadowRoots,
+} from '@webcomponents/template-shadowroot/template-shadowroot.js';
+
+if (!hasNativeDeclarativeShadowRoots()) {
+  hydrateShadowRoots(document.body);
+}
+```
+
+<Warning>
+The DSD polyfill is a **one-shot operation**. It must run after all server-rendered HTML has been parsed. Import it from a `type="module"` script or place it at the end of `<body>` to guarantee this timing.
+</Warning>
+
+## LitElement auto-hydration
+
+For pages containing `LitElement` components, load `@lit-labs/ssr-client/lit-element-hydrate-support.js` **before** any Lit module is imported. This module patches `LitElement` to automatically hydrate itself when it detects an existing shadow root from Declarative Shadow DOM:
+
+```typescript
+// This import must come before 'lit' or any component definitions
+import '@lit-labs/ssr-client/lit-element-hydrate-support.js';
+
+// Now it is safe to import Lit and components
+import './my-element.js';
+```
+
+When a `LitElement` connects to the DOM and already has a shadow root (because DSD created it), the hydrate-support module:
+
+1. Detects `this.shadowRoot` is already set and sets `this._$needsHydration = true`.
+2. On the first `update()` call, runs `hydrate(value, this.renderRoot, this.renderOptions)` instead of `render()`.
+3. Removes any `hydrate-internals-*` aria attributes that the SSR dom-shim added as placeholders.
+4. All subsequent updates use the normal `render()` path.
+
+## Bootup order
+
+The order of initialization matters. The constraints are:
+
+- The DSD polyfill must run **after all HTML is parsed**.
+- `@lit-labs/ssr-client/lit-element-hydrate-support.js` must load **before** `lit` or any component module.
+- Component definitions must load **after** both the polyfill and the hydrate-support module.
+
+<Steps>
+  <Step title="Load hydrate support early">
+    Start fetching the hydrate-support module as early as possible, without blocking:
+
+    ```html
+    <link
+      rel="modulepreload"
+      href="/node_modules/@lit-labs/ssr-client/lit-element-hydrate-support.js"
+    />
+    ```
+  </Step>
+
+  <Step title="Prevent flash of un-styled content">
+    Use a `dsd-pending` attribute to hide content until shadow DOM is active (for browsers requiring the polyfill):
+
+    ```html
+    <style>
+      body[dsd-pending] { display: none; }
+    </style>
+    <body dsd-pending>
+      <script>
+        if (HTMLTemplateElement.prototype.hasOwnProperty('shadowRoot')) {
+          document.body.removeAttribute('dsd-pending');
+        }
+      </script>
+    ```
+  </Step>
+
+  <Step title="Apply polyfill and then load components">
+    ```html
+    <script type="module">
+      (async () => {
+        // Begin fetching hydrate support (non-blocking)
+        const litHydrateSupportInstalled = import(
+          '/node_modules/@lit-labs/ssr-client/lit-element-hydrate-support.js'
+        );
+
+        // Apply DSD polyfill if needed
+        if (!HTMLTemplateElement.prototype.hasOwnProperty('shadowRoot')) {
+          const {hydrateShadowRoots} = await import(
+            '/node_modules/@webcomponents/template-shadowroot/template-shadowroot.js'
+          );
+          hydrateShadowRoots(document.body);
+          document.body.removeAttribute('dsd-pending');
+        }
+
+        // Wait for hydrate support before loading components
+        await litHydrateSupportInstalled;
+
+        // Load component definitions — each will hydrate itself
+        import('/js/my-element.js');
+        import('/js/other-element.js');
+      })();
+    </script>
+    ```
+  </Step>
+</Steps>
+
+## Partial hydration
+
+You do not have to hydrate every component at once. Because `hydrate()` operates on a **single DOM scope** (it does not descend into shadow roots), you can selectively hydrate parts of the page:
+
+```typescript
+import {hydrate} from '@lit-labs/ssr-client';
+import {getContent} from './content-template.js';
+
+// Only hydrate the #content subtree
+const pageInfo = JSON.parse(
+  document.getElementById('page-info')!.textContent!
+);
+hydrate(getContent(pageInfo.description), document.querySelector('#content')!);
+```
+
+LitElements inside a non-hydrated scope will have a `defer-hydration` attribute set by the server. The hydrate-support module removes this attribute when the enclosing scope is hydrated, triggering the element's own hydration.
+
+<Tip>
+Passing data to the client for hydration is a common pattern. Embed the server data as JSON in a `<script type="text/json">` tag (using a server-only template) and read it on the client:
+
+```typescript
+// Server (server-only template, so <script type="text/json"> is safe to use)
+html`<script type="text/json" id="page-info">${JSON.stringify(pageInfo)}</script>`
+
+// Client
+const pageInfo = JSON.parse(document.getElementById('page-info')!.textContent!);
+```
+</Tip>
+
+## Common pitfalls
+
+### Mismatched server/client state
+
+Hydration requires the template and data to be **identical** on the server and client. If the client renders a different template — even a different conditional branch — you will see:
+
+```
+Hydration value mismatch: Unexpected TemplateResult rendered to part
+```
+
+Ensure any data-driven conditionals evaluate to the same result on both sides. Pass the initial server data to the client (e.g., as a JSON script tag) rather than re-fetching it.
+
+### Browser-only APIs in render()
+
+The DOM shim is minimal. Accessing `document`, `window`, `localStorage`, or querying the DOM inside `render()` (or any lifecycle method that runs on the server) will throw or return unexpected values.
+
+Safe lifecycle callbacks to use DOM APIs:
+
+- `LitElement.update()` (server does not call this)
+- `LitElement.updated()` (server does not call this)
+- `LitElement.firstUpdated()` (server does not call this)
+- `Directive.update()` (server does not call this)
+
+Use the `isServer` flag from `lit-html/is-server.js` to guard browser-only code:
+
+```typescript
+import {isServer} from 'lit-html/is-server.js';
+
+render() {
+  const storedValue = isServer ? '' : localStorage.getItem('key');
+  return html`<p>${storedValue}</p>`;
+}
+```
+
+### Hydrating more than once
+
+Calling `hydrate()` on a container that already has a live render will throw:
+
+```
+container already contains a live render
+```
+
+Call `hydrate()` exactly once per container, then use `render()` for all subsequent updates.
+
+### Event handlers and property bindings in server-only templates
+
+Server-only templates (the `html` export from `@lit-labs/ssr`) do not support event handlers (`@click`) or property bindings (`.value`). These require the marker comments that server-only templates omit. Use the normal `html` tag from `lit` for any template that needs these bindings and will be hydrated.

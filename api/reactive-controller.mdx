@@ -1,0 +1,302 @@
+---
+title: ReactiveController
+description: Interfaces for building composable reactive controllers that integrate with the ReactiveElement lifecycle.
+---
+
+## Overview
+
+Reactive controllers are objects that hook into a host element's lifecycle to encapsulate and reuse stateful logic. A controller implements the `ReactiveController` interface and registers itself with a host that implements `ReactiveControllerHost` (such as `ReactiveElement` or `LitElement`).
+
+```typescript
+import type {ReactiveController, ReactiveControllerHost} from '@lit/reactive-element';
+```
+
+**Package:** `@lit/reactive-element`
+
+---
+
+## `ReactiveController` interface
+
+An object that responds to a host element's lifecycle events. All methods are optional.
+
+```typescript
+interface ReactiveController {
+  hostConnected?(): void;
+  hostDisconnected?(): void;
+  hostUpdate?(): void;
+  hostUpdated?(): void;
+}
+```
+
+---
+
+### `hostConnected()`
+
+```typescript
+hostConnected?(): void
+```
+
+Called when the host element is connected to the document. Corresponds to `connectedCallback()` on custom elements. Use this to set up subscriptions, timers, or event listeners.
+
+<Note>
+  If a controller is added to an already-connected host via `addController()`, `hostConnected()` is called immediately.
+</Note>
+
+---
+
+### `hostDisconnected()`
+
+```typescript
+hostDisconnected?(): void
+```
+
+Called when the host element is disconnected from the document. Corresponds to `disconnectedCallback()`. Use this to clean up any resources set up in `hostConnected()`.
+
+---
+
+### `hostUpdate()`
+
+```typescript
+hostUpdate?(): void
+```
+
+Called during the host update cycle, just before the host's own `update()` method runs. Not called during server-side rendering. Use this to read DOM state before the update occurs.
+
+---
+
+### `hostUpdated()`
+
+```typescript
+hostUpdated?(): void
+```
+
+Called after a host update, just before `firstUpdated()` and `updated()` run on the host. Not called during server-side rendering. Use this to react to DOM changes produced by the update.
+
+---
+
+## `ReactiveControllerHost` interface
+
+An object that can host reactive controllers. `ReactiveElement` (and therefore `LitElement`) implements this interface. You can also implement it in non-element classes.
+
+```typescript
+interface ReactiveControllerHost {
+  addController(controller: ReactiveController): void;
+  removeController(controller: ReactiveController): void;
+  requestUpdate(): void;
+  readonly updateComplete: Promise<boolean>;
+}
+```
+
+---
+
+### `addController()`
+
+```typescript
+addController(controller: ReactiveController): void
+```
+
+Registers a controller with the host. The host calls the controller's lifecycle methods in sync with its own lifecycle.
+
+<ParamField path="controller" type="ReactiveController" required>
+  The controller instance to register.
+</ParamField>
+
+---
+
+### `removeController()`
+
+```typescript
+removeController(controller: ReactiveController): void
+```
+
+Removes a previously registered controller.
+
+<ParamField path="controller" type="ReactiveController" required>
+  The controller instance to remove.
+</ParamField>
+
+---
+
+### `requestUpdate()`
+
+```typescript
+requestUpdate(): void
+```
+
+Asks the host to schedule an update. Controllers call this when internal state changes and the host should re-render.
+
+---
+
+### `updateComplete`
+
+```typescript
+readonly updateComplete: Promise<boolean>
+```
+
+Resolves when the host has finished its current update. Resolves to `true` if no further update was scheduled, `false` if a property was set inside `updated()`. Rejects if an exception occurred during the update.
+
+---
+
+## Writing a custom controller
+
+The following example implements a clock controller that tracks the current time and keeps the host synchronized.
+
+```typescript clock-controller.ts
+import type {ReactiveController, ReactiveControllerHost} from '@lit/reactive-element';
+
+export class ClockController implements ReactiveController {
+  private _host: ReactiveControllerHost;
+  private _timerID?: ReturnType<typeof setInterval>;
+
+  value = new Date();
+
+  constructor(host: ReactiveControllerHost) {
+    this._host = host;
+    host.addController(this);
+  }
+
+  hostConnected() {
+    // Start the clock when the host connects.
+    this._timerID = setInterval(() => {
+      this.value = new Date();
+      this._host.requestUpdate();
+    }, 1000);
+  }
+
+  hostDisconnected() {
+    // Stop the clock when the host disconnects.
+    clearInterval(this._timerID);
+    this._timerID = undefined;
+  }
+}
+```
+
+Use the controller in a `LitElement`:
+
+```typescript my-clock.ts
+import {LitElement, html} from 'lit';
+import {customElement} from 'lit/decorators.js';
+import {ClockController} from './clock-controller.js';
+
+@customElement('my-clock')
+class MyClock extends LitElement {
+  private _clock = new ClockController(this);
+
+  render() {
+    return html`<p>The time is ${this._clock.value.toLocaleTimeString()}</p>`;
+  }
+}
+```
+
+---
+
+## TypeScript generic controller
+
+Controllers can be made generic to work with typed host data.
+
+```typescript
+import type {ReactiveController, ReactiveControllerHost} from '@lit/reactive-element';
+
+export class SelectionController<T> implements ReactiveController {
+  private _host: ReactiveControllerHost;
+  selected = new Set<T>();
+
+  constructor(host: ReactiveControllerHost) {
+    this._host = host;
+    host.addController(this);
+  }
+
+  select(item: T) {
+    this.selected.add(item);
+    this._host.requestUpdate();
+  }
+
+  deselect(item: T) {
+    this.selected.delete(item);
+    this._host.requestUpdate();
+  }
+
+  isSelected(item: T): boolean {
+    return this.selected.has(item);
+  }
+
+  hostConnected() {}
+  hostDisconnected() {}
+}
+```
+
+---
+
+## Lifecycle timing
+
+The following diagram shows when controller lifecycle callbacks fire relative to the host's update cycle.
+
+```
+Host connected
+  └─▶ controller.hostConnected()
+
+Host update cycle (triggered by requestUpdate)
+  ├─▶ shouldUpdate()          ← host only
+  ├─▶ willUpdate()            ← host only
+  ├─▶ controller.hostUpdate() ← before host update()
+  ├─▶ update()                ← host only
+  ├─▶ controller.hostUpdated()← after host update()
+  ├─▶ firstUpdated()          ← host only, first update
+  └─▶ updated()               ← host only
+
+Host disconnected
+  └─▶ controller.hostDisconnected()
+```
+
+<Note>
+  `hostUpdate()` and `hostUpdated()` are **not** called during server-side rendering.
+</Note>
+
+---
+
+## Non-element hosts
+
+You can implement `ReactiveControllerHost` in any class — not just custom elements — to use controllers outside the DOM.
+
+```typescript
+class DataStore implements ReactiveControllerHost {
+  private _controllers = new Set<ReactiveController>();
+  private _updatePromise = Promise.resolve(true);
+
+  addController(controller: ReactiveController) {
+    this._controllers.add(controller);
+  }
+
+  removeController(controller: ReactiveController) {
+    this._controllers.delete(controller);
+  }
+
+  requestUpdate() {
+    // Trigger a re-computation or notify observers.
+    this._controllers.forEach((c) => c.hostUpdated?.());
+  }
+
+  get updateComplete(): Promise<boolean> {
+    return this._updatePromise;
+  }
+}
+```
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="ReactiveElement" icon="atom" href="/api/reactive-element">
+    The base class that implements `ReactiveControllerHost`.
+  </Card>
+  <Card title="Controllers overview" icon="plug" href="/controllers/overview">
+    Conceptual guide to reactive controllers.
+  </Card>
+  <Card title="Built-in controllers" icon="boxes-stacked" href="/controllers/built-in-controllers">
+    Controllers shipped with Lit for common use cases.
+  </Card>
+  <Card title="Lifecycle" icon="arrow-rotate-right" href="/concepts/lifecycle">
+    Full update lifecycle sequence.
+  </Card>
+</CardGroup>

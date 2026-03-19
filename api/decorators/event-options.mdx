@@ -1,0 +1,94 @@
+---
+title: '@eventOptions'
+description: 'Decorator that attaches addEventListener options to a method used as an event listener in a Lit template.'
+---
+
+The `@eventOptions` decorator sets `addEventListener` options on a method so that when
+the method is used as an event listener in a lit-html template (e.g. `@click=${this._onClick}`),
+Lit passes those options when adding the listener.
+
+## Import
+
+```typescript
+import {eventOptions} from 'lit/decorators.js';
+```
+
+## Signature
+
+```typescript
+eventOptions(options: AddEventListenerOptions): EventOptionsDecorator
+```
+
+## Options
+
+<ParamField path="capture" type="boolean" default="false">
+  When `true`, the listener is invoked during the capture phase before the
+  event reaches its target.
+</ParamField>
+
+<ParamField path="passive" type="boolean" default="false">
+  When `true`, the listener will never call `preventDefault()`. Marking
+  scroll and touch handlers as passive can significantly improve scrolling
+  performance.
+</ParamField>
+
+<ParamField path="once" type="boolean" default="false">
+  When `true`, the listener is automatically removed after it is invoked
+  for the first time.
+</ParamField>
+
+## Usage
+
+### Passive scroll listener
+
+```typescript
+import {LitElement, html} from 'lit';
+import {eventOptions} from 'lit/decorators.js';
+
+class MyElement extends LitElement {
+  render() {
+    return html`
+      <div @scroll=${this._onScroll} style="overflow:auto;height:200px">
+        <div style="height:1000px"></div>
+      </div>
+    `;
+  }
+
+  @eventOptions({passive: true})
+  private _onScroll(e: Event) {
+    console.log('scrolled', (e.target as Element).scrollTop);
+  }
+}
+```
+
+### Capture phase listener
+
+```typescript
+class MyElement extends LitElement {
+  render() {
+    return html`
+      <div @click=${this._onCaptureClick}>
+        <button>Click me</button>
+      </div>
+    `;
+  }
+
+  @eventOptions({capture: true})
+  private _onCaptureClick(e: Event) {
+    console.log('captured click from', e.target);
+  }
+}
+```
+
+## How it works
+
+The decorator assigns the option properties directly onto the method function object.
+When lit-html binds an event listener using the `@event` syntax and the bound value is
+an object with `handleEvent` or a function with event listener options attached,
+Lit passes those options to `addEventListener`.
+
+<Note>
+  `@eventOptions` only takes effect when the decorated method is used with Lit's
+  event binding syntax (`@event=${this._handler}`). It has no effect when the method
+  is passed to `addEventListener` directly.
+</Note>

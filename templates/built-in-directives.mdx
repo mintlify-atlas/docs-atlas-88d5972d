@@ -1,0 +1,582 @@
+---
+title: Built-in directives
+description: Complete reference for all built-in Lit directives — styling, rendering control, lists, refs, DOM, async, and forms.
+---
+
+Lit ships a set of built-in directives that cover the most common templating needs. All directives are tree-shakeable — you only pay for what you import.
+
+## Styling
+
+### `classMap()`
+
+Applies a set of CSS class names to an element based on a map of class names to boolean values. It must be used in the `class` attribute and must be the only expression in that attribute.
+
+**Import:** `lit/directives/class-map.js`
+
+**Signature:**
+```typescript
+export interface ClassInfo {
+  [name: string]: string | boolean | number;
+}
+
+export const classMap: (classInfo: ClassInfo) => DirectiveResult
+```
+
+```typescript
+import {html} from 'lit';
+import {classMap} from 'lit/directives/class-map.js';
+
+render() {
+  return html`
+    <div class="card ${classMap({
+      active:   this.isActive,
+      disabled: this.isDisabled,
+      loading:  this.isLoading,
+    })}">Content</div>
+  `;
+}
+```
+
+`classMap()` efficiently adds and removes individual classes without touching classes that were already there. Static classes written directly in the attribute are preserved.
+
+---
+
+### `styleMap()`
+
+Applies CSS properties to an element's inline style. It must be used in the `style` attribute and must be the only expression in that attribute.
+
+**Import:** `lit/directives/style-map.js`
+
+**Signature:**
+```typescript
+export interface StyleInfo {
+  [name: string]: string | number | undefined | null;
+}
+
+export const styleMap: (styleInfo: Readonly<StyleInfo>) => DirectiveResult
+```
+
+```typescript
+import {html} from 'lit';
+import {styleMap} from 'lit/directives/style-map.js';
+
+render() {
+  return html`
+    <div style="${styleMap({
+      backgroundColor: this.bgColor,
+      'border-radius': '4px',
+      '--size': this.size,
+    })}">Content</div>
+  `;
+}
+```
+
+CamelCase property names (like `backgroundColor`) are converted to dash-case. Properties with dashes (including CSS custom properties) are set using `style.setProperty()`. Setting a property to `null` or `undefined` removes it.
+
+---
+
+## Rendering control
+
+### `cache()`
+
+Caches the DOM for each template result so that switching between templates does not destroy and recreate DOM.
+
+**Import:** `lit/directives/cache.js`
+
+**Signature:**
+```typescript
+export const cache: (v: unknown) => DirectiveResult
+```
+
+```typescript
+import {html} from 'lit';
+import {cache} from 'lit/directives/cache.js';
+
+html`${cache(this.expanded ? html`<details-view .data=${d}></details-view>` : html`<summary-view .data=${d}></summary-view>`)}`
+```
+
+Useful when templates are expensive to create or hold internal state that should survive a switch.
+
+---
+
+### `guard()`
+
+Prevents re-rendering a template function until one or more dependency values change (checked by strict equality).
+
+**Import:** `lit/directives/guard.js`
+
+**Signature:**
+```typescript
+function guard<T>(
+  vals: unknown[],
+  f: () => T
+): DirectiveResult
+```
+
+```typescript
+import {html} from 'lit';
+import {guard} from 'lit/directives/guard.js';
+
+html`
+  <div>
+    ${guard([this.userId, this.orgId], () => expensiveTemplate(this.userId))}
+  </div>
+`
+```
+
+Array values are diffed item-by-item. Non-array values are checked by identity (`===`). When the values are unchanged, `f()` is not called and the DOM is left as-is.
+
+---
+
+### `when()`
+
+Conditionally calls one of two template functions based on a condition.
+
+**Import:** `lit/directives/when.js`
+
+**Signature:**
+```typescript
+function when<C, T, F = undefined>(
+  condition: C,
+  trueCase: (c: C) => T,
+  falseCase?: (c: C) => F
+): C extends Falsy ? F : T
+```
+
+```typescript
+import {when} from 'lit/directives/when.js';
+
+html`${when(this.user, (u) => html`<p>${u.name}</p>`, () => html`<p>Guest</p>`)}`
+```
+
+See [Conditionals](/templates/conditionals#when-directive) for a full walkthrough.
+
+---
+
+### `choose()`
+
+Selects a template function from a list of cases by matching a value using strict equality. Equivalent to a switch statement.
+
+**Import:** `lit/directives/choose.js`
+
+**Signature:**
+```typescript
+const choose = <T, V, K extends T = T>(
+  value: T,
+  cases: Array<[K, () => V]>,
+  defaultCase?: () => V
+) => V | undefined
+```
+
+```typescript
+import {choose} from 'lit/directives/choose.js';
+
+html`${choose(this.view, [
+  ['list',  () => html`<list-view></list-view>`],
+  ['grid',  () => html`<grid-view></grid-view>`],
+  ['table', () => html`<table-view></table-view>`],
+], () => html`<p>Unknown view</p>`)}`
+```
+
+See [Conditionals](/templates/conditionals#choose-directive) for a full walkthrough.
+
+---
+
+## Lists
+
+### `repeat()`
+
+Renders an iterable with keyed diffing, moving DOM nodes when items reorder instead of updating them in place.
+
+**Import:** `lit/directives/repeat.js`
+
+**Signature:**
+```typescript
+type KeyFn<T>      = (item: T, index: number) => unknown
+type ItemTemplate<T> = (item: T, index: number) => unknown
+
+repeat<T>(items: Iterable<T>, template: ItemTemplate<T>): unknown
+repeat<T>(items: Iterable<T>, keyFn: KeyFn<T>, template: ItemTemplate<T>): unknown
+```
+
+```typescript
+import {repeat} from 'lit/directives/repeat.js';
+
+html`
+  <ul>
+    ${repeat(
+      this.todos,
+      (todo) => todo.id,
+      (todo, i) => html`<li>${i + 1}. ${todo.text}</li>`
+    )}
+  </ul>
+`
+```
+
+---
+
+### `map()`
+
+Maps an iterable (including `undefined`) to a sequence of values.
+
+**Import:** `lit/directives/map.js`
+
+**Signature:**
+```typescript
+function* map<T>(
+  items: Iterable<T> | undefined,
+  f: (value: T, index: number) => unknown
+): Iterable<unknown>
+```
+
+```typescript
+import {map} from 'lit/directives/map.js';
+
+html`${map(this.items, (item) => html`<li>${item}</li>`)}`
+```
+
+---
+
+### `range()`
+
+Returns an iterable of integers from `start` to `end` (exclusive), incrementing by `step`.
+
+**Import:** `lit/directives/range.js`
+
+**Signature:**
+```typescript
+function range(end: number): Iterable<number>
+function range(start: number, end: number, step?: number): Iterable<number>
+```
+
+```typescript
+import {map} from 'lit/directives/map.js';
+import {range} from 'lit/directives/range.js';
+
+html`${map(range(8), () => html`<div class="cell"></div>`)}`
+```
+
+---
+
+### `join()`
+
+Interleaves a separator between the items of an iterable.
+
+**Import:** `lit/directives/join.js`
+
+**Signature:**
+```typescript
+function join<I, J>(
+  items: Iterable<I> | undefined,
+  joiner: J | ((index: number) => J)
+): Iterable<I | J>
+```
+
+```typescript
+import {join} from 'lit/directives/join.js';
+
+html`${join(navItems, html`<span> / </span>`)}`
+```
+
+---
+
+## Refs
+
+### `ref()`
+
+Sets a `Ref` object's `.value` or calls a callback with the element the directive is attached to. Used to get a reference to a rendered DOM element.
+
+**Import:** `lit/directives/ref.js`
+
+**Signature:**
+```typescript
+export const createRef: <T = Element>() => Ref<T>
+
+export type RefOrCallback<T = Element> = Ref<T> | ((el: T | undefined) => void)
+
+export const ref: (ref?: RefOrCallback) => DirectiveResult
+```
+
+<Tabs>
+  <Tab title="Using a Ref object">
+```typescript
+import {createRef, ref} from 'lit/directives/ref.js';
+
+class MyElement extends LitElement {
+  private inputRef = createRef<HTMLInputElement>();
+
+  render() {
+    return html`<input ${ref(this.inputRef)}>`;
+  }
+
+  focus() {
+    this.inputRef.value?.focus();
+  }
+}
+```
+  </Tab>
+  <Tab title="Using a callback">
+```typescript
+import {ref} from 'lit/directives/ref.js';
+
+class MyElement extends LitElement {
+  private canvas?: HTMLCanvasElement;
+
+  render() {
+    return html`<canvas ${ref((el) => {
+      this.canvas = el as HTMLCanvasElement | undefined;
+    })}></canvas>`;
+  }
+}
+```
+  </Tab>
+</Tabs>
+
+The callback is called with `undefined` when the element is removed from the DOM.
+
+---
+
+## DOM
+
+### `unsafeHTML()`
+
+Renders a string as raw HTML instead of text. The string is inserted using `innerHTML`.
+
+**Import:** `lit/directives/unsafe-html.js`
+
+**Signature:**
+```typescript
+export const unsafeHTML: (
+  value: string | typeof nothing | typeof noChange | undefined | null
+) => DirectiveResult
+```
+
+```typescript
+import {unsafeHTML} from 'lit/directives/unsafe-html.js';
+
+html`<div>${unsafeHTML(this.htmlContent)}</div>`
+```
+
+<Warning>
+  Only use `unsafeHTML()` with content you control. Rendering untrusted
+  user-provided HTML with this directive can lead to XSS vulnerabilities.
+</Warning>
+
+---
+
+### `unsafeSVG()`
+
+Renders a string as raw SVG markup. Same semantics as `unsafeHTML()` but for SVG fragments.
+
+**Import:** `lit/directives/unsafe-svg.js`
+
+**Signature:**
+```typescript
+export const unsafeSVG: (
+  value: string | typeof nothing | typeof noChange | undefined | null
+) => DirectiveResult
+```
+
+```typescript
+import {unsafeSVG} from 'lit/directives/unsafe-svg.js';
+
+html`<svg viewBox="0 0 24 24">${unsafeSVG(this.svgPath)}</svg>`
+```
+
+<Warning>
+  Same XSS caution as `unsafeHTML()` — only use with trusted content.
+</Warning>
+
+---
+
+### `unsafeMathML()`
+
+Renders a string as raw MathML markup.
+
+**Import:** `lit/directives/unsafe-mathml.js`
+
+**Signature:**
+```typescript
+export const unsafeMathML: (
+  value: string | typeof nothing | typeof noChange | undefined | null
+) => DirectiveResult
+```
+
+```typescript
+import {unsafeMathML} from 'lit/directives/unsafe-mathml.js';
+
+html`<math>${unsafeMathML(this.mathContent)}</math>`
+```
+
+---
+
+### `templateContent()`
+
+Renders the content of an `HTMLTemplateElement` as DOM nodes.
+
+**Import:** `lit/directives/template-content.js`
+
+**Signature:**
+```typescript
+export const templateContent: (template: HTMLTemplateElement) => DirectiveResult
+```
+
+```typescript
+import {templateContent} from 'lit/directives/template-content.js';
+
+const myTemplate = document.querySelector('#my-template') as HTMLTemplateElement;
+
+html`<div>${templateContent(myTemplate)}</div>`
+```
+
+<Warning>
+  The template should be developer-controlled. Rendering a user-controlled
+  `HTMLTemplateElement` with this directive could lead to XSS vulnerabilities.
+</Warning>
+
+---
+
+## Async
+
+### `until()`
+
+Renders placeholder content while waiting for one or more Promises to resolve. Values are rendered in priority order — the first argument has the highest priority.
+
+**Import:** `lit/directives/until.js`
+
+**Signature:**
+```typescript
+function until<T extends Array<unknown>>(...args: T): DirectiveResult
+```
+
+```typescript
+import {until} from 'lit/directives/until.js';
+
+const content = fetch('/api/data').then((r) => r.text());
+
+html`
+  <div>
+    ${until(
+      content.then((text) => html`<p>${text}</p>`),
+      html`<span>Loading...</span>`
+    )}
+  </div>
+`
+```
+
+The loading indicator renders immediately (it is a non-Promise). When `content` resolves, it replaces the loading indicator.
+
+---
+
+### `asyncReplace()`
+
+Renders values from an async iterable, replacing the previous value each time a new value is emitted.
+
+**Import:** `lit/directives/async-replace.js`
+
+**Signature:**
+```typescript
+export const asyncReplace: <T>(
+  value: AsyncIterable<T>,
+  mapper?: (v: T, index?: number) => unknown
+) => DirectiveResult
+```
+
+```typescript
+import {asyncReplace} from 'lit/directives/async-replace.js';
+
+async function* clock() {
+  while (true) {
+    yield new Date().toLocaleTimeString();
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+html`<p>Time: ${asyncReplace(clock())}</p>`
+```
+
+---
+
+### `asyncAppend()`
+
+Renders values from an async iterable, **appending** each new value instead of replacing the previous one.
+
+**Import:** `lit/directives/async-append.js`
+
+**Signature:**
+```typescript
+export const asyncAppend: <T>(
+  value: AsyncIterable<T>,
+  mapper?: (v: T, index?: number) => unknown
+) => DirectiveResult
+```
+
+```typescript
+import {asyncAppend} from 'lit/directives/async-append.js';
+
+async function* streamLines(url: string) {
+  const reader = (await fetch(url)).body!.getReader();
+  // ... yield decoded lines
+}
+
+html`<pre>${asyncAppend(streamLines('/stream'))}</pre>`
+```
+
+<Note>
+  `asyncAppend()` and `asyncReplace()` accept an optional `mapper` function
+  `(value, index) => unknown` that transforms each emitted value before
+  rendering — useful for generating a template per item.
+</Note>
+
+---
+
+## Forms
+
+### `live()`
+
+Checks the binding value against the **live DOM value** rather than the previously-bound value when deciding whether to update. Use this when the DOM property may change outside of Lit's control.
+
+**Import:** `lit/directives/live.js`
+
+**Signature:**
+```typescript
+function live<T>(value: T): DirectiveResult
+```
+
+```typescript
+import {live} from 'lit/directives/live.js';
+
+// Ensures the input value is always overwritten with the bound value,
+// even if the user has typed into the input since the last render.
+html`<input .value="${live(this.inputValue)}">`
+```
+
+`live()` works on property, attribute, and boolean-attribute bindings. It always compares the new value against the current DOM state using strict equality.
+
+<Note>
+  Do not use `live()` with bindings that cause type conversions (for example,
+  an attribute binding where the DOM stores a string but you pass a number).
+  The comparison will always fail, causing an update on every render.
+</Note>
+
+---
+
+### `ifDefined()`
+
+Sets an attribute when the value is defined and removes the attribute when the value is `undefined`.
+
+**Import:** `lit/directives/if-defined.js`
+
+**Signature:**
+```typescript
+export const ifDefined: <T>(value: T) => T | typeof nothing
+```
+
+```typescript
+import {ifDefined} from 'lit/directives/if-defined.js';
+
+html`<a href="${ifDefined(this.url)}">Link</a>`
+// href is removed entirely when this.url is undefined
+```
+
+See [Conditionals](/templates/conditionals#ifdefined-directive) for a full walkthrough.

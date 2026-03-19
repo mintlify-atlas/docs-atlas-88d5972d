@@ -1,0 +1,263 @@
+---
+title: Installation
+description: Add Lit to your project via npm, CDN, or a bundler.
+---
+
+Lit works in any environment that supports modern JavaScript modules. Choose the setup that matches your project.
+
+<Tabs>
+  <Tab title="npm + bundler">
+    Install the `lit` package and import it from your bundler entry point. This is the recommended setup for production applications.
+
+    <CodeGroup>
+
+    ```bash npm
+    npm install lit
+    ```
+
+    ```bash yarn
+    yarn add lit
+    ```
+
+    ```bash pnpm
+    pnpm add lit
+    ```
+
+    </CodeGroup>
+
+    Then import in your component file:
+
+    ```typescript my-element.ts
+    import { LitElement, html, css } from 'lit';
+    import { customElement, property } from 'lit/decorators.js';
+
+    @customElement('my-element')
+    export class MyElement extends LitElement {
+      @property()
+      name = 'World';
+
+      render() {
+        return html`<p>Hello, ${this.name}!</p>`;
+      }
+    }
+    ```
+
+    The `lit` package re-exports everything from `lit-element`, `lit-html`, and `@lit/reactive-element`, so a single import covers all core APIs.
+
+    ### Bundler configuration
+
+    Lit ships as standard ES modules and requires no special bundler configuration. It works out of the box with Vite, Rollup, and webpack.
+
+    <CodeGroup>
+
+    ```bash Vite
+    npm create vite@latest my-app -- --template vanilla-ts
+    cd my-app
+    npm install lit
+    ```
+
+    ```javascript rollup.config.js
+    import resolve from '@rollup/plugin-node-resolve';
+
+    export default {
+      input: 'src/index.ts',
+      output: { file: 'dist/bundle.js', format: 'es' },
+      plugins: [resolve()],
+    };
+    ```
+
+    ```javascript webpack.config.js
+    module.exports = {
+      entry: './src/index.ts',
+      module: {
+        rules: [
+          {
+            test: /\.tsx?$/,
+            use: 'ts-loader',
+            exclude: /node_modules/,
+          },
+        ],
+      },
+      resolve: { extensions: ['.tsx', '.ts', '.js'] },
+    };
+    ```
+
+    </CodeGroup>
+  </Tab>
+
+  <Tab title="CDN / no build step">
+    You can use Lit directly in the browser without a build step by loading it from a CDN. Use an [import map](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/script/type/importmap) to resolve bare module specifiers.
+
+    ```html index.html
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Lit CDN Example</title>
+        <script type="importmap">
+          {
+            "imports": {
+              "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js"
+            }
+          }
+        </script>
+        <script type="module" src="./my-element.js"></script>
+      </head>
+      <body>
+        <my-element name="Lit"></my-element>
+      </body>
+    </html>
+    ```
+
+    ```javascript my-element.js
+    import { LitElement, html, css } from 'lit';
+
+    class MyElement extends LitElement {
+      static properties = { name: {} };
+
+      static styles = css`
+        p { color: #344cfc; }
+      `;
+
+      constructor() {
+        super();
+        this.name = 'World';
+      }
+
+      render() {
+        return html`<p>Hello, ${this.name}!</p>`;
+      }
+    }
+
+    customElements.define('my-element', MyElement);
+    ```
+
+    <Note>
+      The CDN build does not include decorators. Use the static `properties` getter or `static styles` instead when working without a build step and TypeScript decorator support.
+    </Note>
+
+    ### Direct module import (unpkg)
+
+    Alternatively, import Lit directly by URL without an import map:
+
+    ```javascript my-element.js
+    import {
+      LitElement,
+      html,
+      css,
+    } from 'https://unpkg.com/lit@3/index.js?module';
+    ```
+
+    <Warning>
+      Importing by URL without an import map can result in multiple copies of Lit being loaded if different packages resolve to different URLs. Prefer import maps in production.
+    </Warning>
+  </Tab>
+
+  <Tab title="TypeScript">
+    Lit is written in TypeScript and ships type definitions. No additional `@types` packages are required.
+
+    ### tsconfig.json
+
+    Lit decorators (`@customElement`, `@property`, `@state`, etc.) require the following `tsconfig.json` settings:
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "target": "ES2021",
+        "module": "ESNext",
+        "moduleResolution": "NodeNext",
+        "lib": ["ES2021", "DOM", "DOM.Iterable"],
+        "experimentalDecorators": true,
+        "useDefineForClassFields": false,
+        "strict": true
+      }
+    }
+    ```
+
+    <Warning>
+      `useDefineForClassFields` must be `false`. When set to `true`, class field declarations override the property accessor that Lit installs via `@property`, breaking reactivity.
+    </Warning>
+
+    `experimentalDecorators: true` enables the TypeScript decorator syntax. Lit's decorators are compatible with TypeScript's legacy decorator implementation (stage 2).
+
+    ### Example with full decorator usage
+
+    ```typescript my-element.ts
+    import { LitElement, html, css } from 'lit';
+    import { customElement, property, state, query } from 'lit/decorators.js';
+
+    @customElement('my-element')
+    export class MyElement extends LitElement {
+      static styles = css`
+        :host { display: block; }
+        span { color: green; }
+      `;
+
+      /** Public reactive property — also reflects as an attribute. */
+      @property()
+      mood = 'great';
+
+      /** Internal reactive state — not exposed as an attribute. */
+      @state()
+      private _count = 0;
+
+      /** Query a DOM element inside the shadow root. */
+      @query('span')
+      private _span!: HTMLSpanElement;
+
+      render() {
+        return html`
+          Web Components are <span>${this.mood}</span>!
+          <button @click=${() => this._count++}>
+            Clicked ${this._count} times
+          </button>
+        `;
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Browser compatibility
+
+Lit targets browsers that support:
+
+- [Custom Elements v1](https://caniuse.com/custom-elementsv1)
+- [Shadow DOM v1](https://caniuse.com/shadowdomv1)
+- [ES2019+](https://caniuse.com/es6)
+
+This covers all modern evergreen browsers: Chrome, Firefox, Safari, and Edge.
+
+## Polyfills for older browsers
+
+If you need to support older browsers (e.g., legacy Edge or IE 11 is not supported), load the Web Components polyfills before your components.
+
+```bash
+npm install @webcomponents/webcomponentsjs
+```
+
+```html index.html
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Load polyfills before any web component scripts -->
+    <script src="node_modules/@webcomponents/webcomponentsjs/webcomponents-loader.js"></script>
+
+    <!-- Then load Lit's polyfill support module -->
+    <script type="module">
+      import 'lit/polyfill-support.js';
+    </script>
+
+    <script type="module" src="./my-element.js"></script>
+  </head>
+  <body>
+    <my-element></my-element>
+  </body>
+</html>
+```
+
+<Note>
+  The `webcomponents-loader.js` script detects which polyfills are needed and loads only those, minimizing the payload for browsers that already have native support.
+</Note>
+
+You must also import `lit/polyfill-support.js` to patch Lit's rendering pipeline to work correctly with the polyfilled custom elements and shadow DOM implementations.

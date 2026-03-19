@@ -1,0 +1,355 @@
+---
+title: Built-in controllers
+description: Ready-made reactive controllers for common browser APIs — ResizeObserver, MutationObserver, IntersectionObserver, PerformanceObserver — plus task management and context.
+---
+
+Lit provides several packages that ship reactive controllers wrapping common browser and application APIs. Install only what you need.
+
+<CardGroup cols={2}>
+  <Card title="@lit-labs/observers" icon="eye">
+    ResizeController, MutationController, IntersectionController, PerformanceController
+  </Card>
+  <Card title="@lit/task" icon="loader" href="/libraries/task">
+    Task controller for async operations like data fetching
+  </Card>
+  <Card title="@lit/context" icon="share-2" href="/libraries/context">
+    ContextConsumer and ContextProvider for cross-component data sharing
+  </Card>
+</CardGroup>
+
+---
+
+## @lit-labs/observers
+
+The `@lit-labs/observers` package integrates the four browser Observer APIs with the reactive update lifecycle.
+
+<Tabs>
+  <Tab title="npm">
+    ```bash
+    npm install @lit-labs/observers
+    ```
+  </Tab>
+  <Tab title="yarn">
+    ```bash
+    yarn add @lit-labs/observers
+    ```
+  </Tab>
+  <Tab title="pnpm">
+    ```bash
+    pnpm add @lit-labs/observers
+    ```
+  </Tab>
+</Tabs>
+
+### How observer controllers work
+
+All four controllers follow the same pattern:
+
+1. Construct the controller with the host element and a config object.
+2. Provide a `callback` function that converts raw observer entries into a typed `value`.
+3. Read `controller.value` in the host's `render()` — it is always up to date.
+4. The controller automatically starts observing on `hostConnected` and stops on `hostDisconnected`.
+
+---
+
+### ResizeController
+
+`ResizeController` wraps the [`ResizeObserver`](https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver) API to notify the host whenever a target element's size changes.
+
+**Import**
+
+```typescript
+import { ResizeController } from '@lit-labs/observers/resize-controller.js';
+```
+
+**Constructor**
+
+```typescript
+new ResizeController<T>(host: ReactiveControllerHost & Element, config: ResizeControllerConfig<T>)
+```
+
+**Config options**
+
+| Option | Type | Description |
+|---|---|---|
+| `config` | `ResizeObserverOptions` | Options passed directly to `ResizeObserver.observe()`. |
+| `target` | `Element \| null` | Element to observe. Defaults to the host element. Pass `null` to observe nothing automatically. |
+| `callback` | `(entries: ResizeObserverEntry[], observer: ResizeObserver) => T` | Processes observer entries into `controller.value`. |
+| `skipInitial` | `boolean` | When `true`, skips calling `callback` with an empty entry list on first observe. Defaults to `false`. |
+
+**Instance members**
+
+| Member | Type | Description |
+|---|---|---|
+| `value` | `T \| undefined` | The last value returned by `callback`. |
+| `callback` | `ResizeValueCallback<T> \| undefined` | The callback function (can be reassigned). |
+| `observe(target)` | `void` | Start observing an additional element. |
+| `unobserve(target)` | `void` | Stop observing an element. |
+| `target(observe?)` | directive | Element directive that auto-observes the element it is applied to. |
+
+**Example**
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { ResizeController } from '@lit-labs/observers/resize-controller.js';
+
+@customElement('my-resizable')
+class MyResizable extends LitElement {
+  private _resizeController = new ResizeController(this, {
+    callback: ([entry]) => entry?.contentRect,
+  });
+
+  render() {
+    const rect = this._resizeController.value;
+    return html`
+      <p>Width: ${rect?.width ?? 0}px</p>
+      <p>Height: ${rect?.height ?? 0}px</p>
+    `;
+  }
+}
+```
+
+You can also observe a specific child element using the `target` directive:
+
+```typescript
+@customElement('my-resizable')
+class MyResizable extends LitElement {
+  private _resizeController = new ResizeController(this, {
+    target: null, // don't auto-observe the host
+    callback: ([entry]) => entry?.contentRect,
+  });
+
+  render() {
+    return html`
+      <div ${this._resizeController.target()}>
+        <p>Width: ${this._resizeController.value?.width ?? 0}px</p>
+      </div>
+    `;
+  }
+}
+```
+
+<Note>
+  `ResizeController` logs a warning and exits early in environments where `ResizeObserver` is not available (including server-side rendering).
+</Note>
+
+---
+
+### MutationController
+
+`MutationController` wraps the [`MutationObserver`](https://developer.mozilla.org/en-US/docs/Web/API/MutationObserver) API to notify the host when DOM mutations occur on a target element.
+
+**Import**
+
+```typescript
+import { MutationController } from '@lit-labs/observers/mutation-controller.js';
+```
+
+**Constructor**
+
+```typescript
+new MutationController<T>(host: ReactiveControllerHost & Element, config: MutationControllerConfig<T>)
+```
+
+**Config options**
+
+| Option | Type | Description |
+|---|---|---|
+| `config` | `MutationObserverInit` | **Required.** Options passed directly to `MutationObserver.observe()` (e.g. `{ childList: true, attributes: true }`). |
+| `target` | `Element \| null` | Element to observe. Defaults to the host element. Pass `null` to observe nothing automatically. |
+| `callback` | `(records: MutationRecord[], observer: MutationObserver) => T` | Processes mutation records into `controller.value`. |
+| `skipInitial` | `boolean` | When `true`, skips calling `callback` with an empty record list on first observe. Defaults to `false`. |
+
+**Instance members**
+
+| Member | Type | Description |
+|---|---|---|
+| `value` | `T \| undefined` | The last value returned by `callback`. |
+| `callback` | `MutationValueCallback<T> \| undefined` | The callback function (can be reassigned). |
+| `observe(target)` | `void` | Start observing an additional element. |
+
+**Example**
+
+Detect when child nodes are added or removed from the host element:
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { MutationController } from '@lit-labs/observers/mutation-controller.js';
+
+@customElement('my-list')
+class MyList extends LitElement {
+  private _mutationController = new MutationController(this, {
+    config: { childList: true, subtree: true },
+    callback: (records) => records.flatMap((r) => [...r.addedNodes]),
+  });
+
+  render() {
+    const added = this._mutationController.value ?? [];
+    return html`
+      <slot></slot>
+      <p>${added.length} node(s) added since last mutation.</p>
+    `;
+  }
+}
+```
+
+<Note>
+  `MutationController` logs a warning and exits early in environments where `MutationObserver` is not available, including server-side rendering.
+</Note>
+
+---
+
+### IntersectionController
+
+`IntersectionController` wraps the [`IntersectionObserver`](https://developer.mozilla.org/en-US/docs/Web/API/IntersectionObserver) API to notify the host when a target element enters or exits the viewport (or another scroll container).
+
+**Import**
+
+```typescript
+import { IntersectionController } from '@lit-labs/observers/intersection-controller.js';
+```
+
+**Constructor**
+
+```typescript
+new IntersectionController<T>(host: ReactiveControllerHost & Element, config: IntersectionControllerConfig<T>)
+```
+
+**Config options**
+
+| Option | Type | Description |
+|---|---|---|
+| `config` | `IntersectionObserverInit` | Options passed directly to the `IntersectionObserver` constructor (e.g. `{ threshold: 0.5 }`). |
+| `target` | `Element \| null` | Element to observe. Defaults to the host element. Pass `null` to observe nothing automatically. |
+| `callback` | `(entries: IntersectionObserverEntry[], observer: IntersectionObserver) => T` | Processes entries into `controller.value`. |
+| `skipInitial` | `boolean` | When `true`, ignores the initial intersection state reported when observation starts. Defaults to `false`. |
+
+**Instance members**
+
+| Member | Type | Description |
+|---|---|---|
+| `value` | `T \| undefined` | The last value returned by `callback`. |
+| `callback` | `IntersectionValueCallback<T> \| undefined` | The callback function (can be reassigned). |
+| `observe(target)` | `void` | Start observing an additional element. |
+| `unobserve(target)` | `void` | Stop observing an element. |
+
+**Example**
+
+Show different content based on whether the element is visible in the viewport:
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { IntersectionController } from '@lit-labs/observers/intersection-controller.js';
+
+@customElement('lazy-image')
+class LazyImage extends LitElement {
+  private _intersectionController = new IntersectionController(this, {
+    config: { threshold: 0 },
+    callback: ([entry]) => entry?.isIntersecting ?? false,
+    skipInitial: false,
+  });
+
+  render() {
+    const visible = this._intersectionController.value;
+    return html`
+      ${visible
+        ? html`<img src="/image.jpg" alt="Lazy loaded image" />`
+        : html`<div class="placeholder"></div>`}
+    `;
+  }
+}
+```
+
+<Note>
+  Unlike `ResizeController` and `MutationController`, `IntersectionObserver` always fires its callback immediately when `observe()` is called to report the initial intersection state. Use `skipInitial: true` to suppress this if the initial state is not needed.
+</Note>
+
+<Warning>
+  `IntersectionController` logs a warning and exits early in environments where `IntersectionObserver` is not available, including server-side rendering.
+</Warning>
+
+---
+
+### PerformanceController
+
+`PerformanceController` wraps the [`PerformanceObserver`](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceObserver) API to collect performance timeline entries (marks, measures, resource timings, etc.) and make them available in the reactive update cycle.
+
+**Import**
+
+```typescript
+import { PerformanceController } from '@lit-labs/observers/performance-controller.js';
+```
+
+**Constructor**
+
+```typescript
+new PerformanceController<T>(host: ReactiveControllerHost, config: PerformanceControllerConfig<T>)
+```
+
+<Note>
+  Unlike the other observer controllers, `PerformanceController` accepts a plain `ReactiveControllerHost` — it does not require the host to also be an `Element`, since `PerformanceObserver` is not tied to a specific DOM element.
+</Note>
+
+**Config options**
+
+| Option | Type | Description |
+|---|---|---|
+| `config` | `PerformanceObserverInit` | **Required.** Options passed to `PerformanceObserver.observe()` (e.g. `{ entryTypes: ['measure'] }`). |
+| `callback` | `(entries: PerformanceEntryList, observer: PerformanceObserver, entryList?: PerformanceObserverEntryList) => T` | Processes performance entries into `controller.value`. |
+| `skipInitial` | `boolean` | When `true`, skips calling `callback` with an empty entry list on first observe. Defaults to `false`. |
+
+**Instance members**
+
+| Member | Type | Description |
+|---|---|---|
+| `value` | `T \| undefined` | The last value returned by `callback`. |
+| `callback` | `PerformanceValueCallback<T> \| undefined` | The callback function (can be reassigned). |
+| `observe()` | `void` | Start observing. Called automatically on `hostConnected`. |
+| `flush()` | `void` | Immediately process any buffered entries and request a host update. |
+
+**Example**
+
+Collect `measure` entries and display the most recent one:
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { PerformanceController } from '@lit-labs/observers/performance-controller.js';
+
+@customElement('perf-monitor')
+class PerfMonitor extends LitElement {
+  private _perf = new PerformanceController(this, {
+    config: { entryTypes: ['measure'] },
+    callback: (entries) => entries.at(-1),
+  });
+
+  render() {
+    const latest = this._perf.value;
+    return html`
+      <p>
+        Last measure: ${latest ? `${latest.name} — ${latest.duration.toFixed(1)}ms` : 'none'}
+      </p>
+    `;
+  }
+}
+```
+
+<Warning>
+  `PerformanceController` logs a warning and exits early in environments where `PerformanceObserver` is not available, including server-side rendering.
+</Warning>
+
+---
+
+## Other built-in controllers
+
+<CardGroup cols={2}>
+  <Card title="Task" icon="loader" href="/libraries/task">
+    `@lit/task` — The `Task` controller manages async operations with built-in pending, complete, and error states. Use it for data fetching, debounced computations, and any work that should re-run when reactive properties change.
+  </Card>
+  <Card title="ContextConsumer and ContextProvider" icon="share-2" href="/libraries/context">
+    `@lit/context` — `ContextConsumer` and `ContextProvider` implement the W3C community Context Protocol, enabling components to share data across the element tree without prop drilling.
+  </Card>
+</CardGroup>

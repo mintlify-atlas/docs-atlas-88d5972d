@@ -1,0 +1,240 @@
+---
+title: Lists
+description: Render and efficiently update lists and iterables in Lit templates using arrays, repeat(), map(), range(), and join().
+---
+
+Lit can render any iterable value in a child expression — including `Array`, `Set`, generator functions, and the built-in list directives.
+
+## Arrays of TemplateResults
+
+The simplest way to render a list is to map an array to `TemplateResult` values using JavaScript's `Array.prototype.map()` and place the result directly in a template expression.
+
+```typescript
+render() {
+  return html`
+    <ul>
+      ${this.items.map((item) => html`<li>${item.name}</li>`)}
+    </ul>
+  `;
+}
+```
+
+Lit renders each item in order and updates the list on re-render using index-based diffing. Existing DOM nodes are reused when items remain at the same index.
+
+## `repeat()` directive
+
+The `repeat()` directive renders an iterable and performs **keyed** diffing — it moves, reuses, or creates DOM based on a stable key associated with each item, rather than its index.
+
+**Import:** `lit/directives/repeat.js`
+
+**Signatures:**
+```typescript
+// Without a key function (behaves like index-based map)
+repeat<T>(items: Iterable<T>, template: ItemTemplate<T>): unknown
+
+// With a key function (keyed diffing)
+repeat<T>(
+  items: Iterable<T>,
+  keyFn: KeyFn<T>,
+  template: ItemTemplate<T>
+): unknown
+
+// Type aliases
+type KeyFn<T>      = (item: T, index: number) => unknown
+type ItemTemplate<T> = (item: T, index: number) => unknown
+```
+
+```typescript
+import {html} from 'lit';
+import {repeat} from 'lit/directives/repeat.js';
+
+render() {
+  return html`
+    <ol>
+      ${repeat(
+        this.todos,
+        (todo) => todo.id,              // key function
+        (todo, index) => html`
+          <li>${index + 1}. ${todo.text}</li>
+        `
+      )}
+    </ol>
+  `;
+}
+```
+
+<Warning>
+  When using a `keyFn`, keys must be unique for all items in a given call to
+  `repeat()`. The behavior when two or more items share the same key is
+  undefined.
+</Warning>
+
+## `map()` directive
+
+`map()` is a lightweight alternative to `Array.prototype.map()` that also accepts any `Iterable` (not just arrays), including generators and `Set`.
+
+**Import:** `lit/directives/map.js`
+
+**Signature:**
+```typescript
+function* map<T>(
+  items: Iterable<T> | undefined,
+  f: (value: T, index: number) => unknown
+): Iterable<unknown>
+```
+
+```typescript
+import {html} from 'lit';
+import {map} from 'lit/directives/map.js';
+
+render() {
+  return html`
+    <ul>
+      ${map(this.items, (item, index) => html`
+        <li>${index}: ${item.label}</li>
+      `)}
+    </ul>
+  `;
+}
+```
+
+Unlike `Array.prototype.map()`, `map()` accepts `undefined` without throwing:
+
+```typescript
+// Safe even if this.items is undefined
+html`${map(this.items, (i) => html`<li>${i}</li>`)}`
+```
+
+## `range()` directive
+
+`range()` returns an iterable of integers, similar to Python's `range`. It is useful for generating a fixed number of elements without maintaining a data array.
+
+**Import:** `lit/directives/range.js`
+
+**Signatures:**
+```typescript
+function range(end: number): Iterable<number>
+function range(start: number, end: number, step?: number): Iterable<number>
+```
+
+```typescript
+import {html} from 'lit';
+import {map} from 'lit/directives/map.js';
+import {range} from 'lit/directives/range.js';
+
+// Render 5 placeholder cells
+html`
+  <div class="grid">
+    ${map(range(5), () => html`<div class="cell"></div>`)}
+  </div>
+`
+```
+
+```typescript
+// Range with start, end, and step
+html`
+  ${map(range(0, 10, 2), (n) => html`<span>${n}</span>`)}
+  <!-- renders 0 2 4 6 8 -->
+`
+```
+
+## `join()` directive
+
+`join()` interleaves a separator value between the items of an iterable. It is useful for rendering comma-separated lists or dividers.
+
+**Import:** `lit/directives/join.js`
+
+**Signatures:**
+```typescript
+// Static joiner value
+function join<I, J>(
+  items: Iterable<I> | undefined,
+  joiner: J
+): Iterable<I | J>
+
+// Function joiner, called with the index of the preceding item
+function join<I, J>(
+  items: Iterable<I> | undefined,
+  joiner: (index: number) => J
+): Iterable<I | J>
+```
+
+```typescript
+import {html} from 'lit';
+import {join} from 'lit/directives/join.js';
+
+// Static template separator
+render() {
+  return html`
+    <nav>
+      ${join(
+        this.links.map((l) => html`<a href="${l.href}">${l.label}</a>`),
+        html`<span class="sep"> | </span>`
+      )}
+    </nav>
+  `;
+}
+```
+
+```typescript
+// Function separator (receives preceding item index)
+html`
+  ${join(items, (i) => html`<hr data-after="${i}">`)
+`
+```
+
+## When to use `repeat()` vs. `map()`
+
+Both `repeat()` (without a key function) and `map()` / `Array.prototype.map()` update list items by index. The key difference is whether you provide a key function to `repeat()`.
+
+<CardGroup cols={2}>
+  <Card title="map() / Array.map()" icon="arrow-right-arrow-left">
+    **Index-based diffing.** Existing DOM nodes are reused in position order.
+    Fast for lists where items rarely reorder. Simpler to write.
+  </Card>
+  <Card title="repeat() with keyFn" icon="key">
+    **Key-based diffing.** DOM nodes are moved to match the new order of
+    keys, minimizing DOM mutations for reorders, insertions, and removals.
+  </Card>
+</CardGroup>
+
+### Use `map()` or `Array.prototype.map()` when:
+
+- Items are read-only and never reorder.
+- The list is short and performance is not a concern.
+- Items do not hold internal DOM state (focused inputs, scroll position, animations).
+
+### Use `repeat()` with a `keyFn` when:
+
+- The list can be sorted, filtered, or have items inserted/removed at arbitrary positions.
+- Items hold internal DOM state that must survive reordering.
+- The list is large and minimizing DOM mutations is important for performance.
+
+```typescript
+// map() — simple, index-based
+html`${this.users.map((u) => html`<li>${u.name}</li>`)}`
+
+// repeat() — keyed, moves DOM on reorder
+html`${repeat(this.users, (u) => u.id, (u) => html`<li>${u.name}</li>`)}`
+```
+
+## Performance implications
+
+<AccordionGroup>
+  <Accordion title="Why keyed diffing helps for reorders">
+    Without keys, if you reverse a 100-item list, Lit updates all 100 DOM nodes
+    in place (changing each node's content). With a key function, `repeat()`
+    detects that the same DOM nodes just need to be moved, resulting in 100
+    `insertBefore` calls and zero content updates — much faster when items are
+    complex templates.
+  </Accordion>
+  <Accordion title="Why index-based is sometimes faster for simple mutations">
+    Key-based reconciliation requires building key-to-index maps and scanning
+    the old and new lists. For appending to or truncating a list, the index-based
+    approach is simpler and faster because no key lookups are needed.
+  </Accordion>
+  <Accordion title="Memory overhead of repeat()">
+    `repeat()` tracks a list of item keys between renders. For very large lists
+    this has a small additional memory cost compared to a plain `map()`.
+  </Accordion>
+</AccordionGroup>

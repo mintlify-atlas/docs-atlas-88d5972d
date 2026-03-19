@@ -1,0 +1,95 @@
+---
+title: '@state'
+description: 'Decorator that declares a private reactive property that triggers updates but is not exposed as an HTML attribute.'
+---
+
+The `@state` decorator declares an internal reactive property. Like `@property`, changing a state property
+schedules an element update. Unlike `@property`, state properties are not backed by HTML attributes and
+are not intended to be set by users of the element.
+
+## Import
+
+```typescript
+import {state} from 'lit/decorators.js';
+```
+
+## Signature
+
+```typescript
+state(options?: StateDeclaration): PropertyDecorator
+```
+
+## Options
+
+<ParamField path="hasChanged" type="(value: T, oldValue: T) => boolean">
+  A function that determines whether a change to the property should trigger
+  an update. Return `true` to request an update. Defaults to strict inequality
+  (`!==`).
+</ParamField>
+
+## Usage
+
+```typescript
+import {LitElement, html} from 'lit';
+import {state} from 'lit/decorators.js';
+
+class MyCounter extends LitElement {
+  @state()
+  private _count = 0;
+
+  render() {
+    return html`
+      <p>Count: ${this._count}</p>
+      <button @click=${() => this._count++}>Increment</button>
+    `;
+  }
+}
+```
+
+## @state vs @property
+
+| | `@state` | `@property` |
+|---|---|---|
+| Triggers re-render | Yes | Yes |
+| Backed by attribute | No | Yes (by default) |
+| Visible from HTML | No | Yes |
+| Can be renamed by minifiers | Yes | No |
+| Intended audience | Internal element logic | Public API |
+
+Use `@state` for values that are internal implementation details of your element — things
+like whether a dropdown is open, or intermediate values computed during user interaction.
+
+Use [`@property`](/api/decorators/property) for values that element users can configure
+from HTML or JavaScript, such as a `name` or `disabled` flag.
+
+<Tip>
+  State properties can be renamed or mangled by optimizing compilers like Closure
+  Compiler because they are not tied to observed attribute names. This makes them
+  safe to use with build-time minification.
+</Tip>
+
+## Without decorators
+
+Without decorators, declare a state property using `static properties` with `state: true`:
+
+```typescript
+import {LitElement, html} from 'lit';
+
+class MyCounter extends LitElement {
+  static properties = {
+    _count: {state: true},
+  };
+
+  constructor() {
+    super();
+    this._count = 0;
+  }
+
+  render() {
+    return html`
+      <p>Count: ${this._count}</p>
+      <button @click=${() => this._count++}>Increment</button>
+    `;
+  }
+}
+```

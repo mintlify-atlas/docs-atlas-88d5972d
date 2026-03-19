@@ -1,0 +1,199 @@
+---
+title: Components
+description: Learn how to define Lit components by extending LitElement, structuring your class, and using Shadow DOM encapsulation.
+---
+
+A Lit component is a reusable piece of UI built as a standard [custom element](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements). It extends `LitElement`, which provides reactive properties, declarative templates via `html`, and Shadow DOM encapsulation out of the box.
+
+## Defining a component
+
+Every Lit component is a class that extends `LitElement` and is registered as a custom element with a tag name.
+
+<Tabs>
+  <Tab title="Decorator">
+    ```typescript
+    import { LitElement, html } from 'lit';
+    import { customElement } from 'lit/decorators.js';
+
+    @customElement('my-element')
+    class MyElement extends LitElement {
+      render() {
+        return html`<p>Hello from my-element!</p>`;
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="customElements.define">
+    ```typescript
+    import { LitElement, html } from 'lit';
+
+    class MyElement extends LitElement {
+      render() {
+        return html`<p>Hello from my-element!</p>`;
+      }
+    }
+
+    customElements.define('my-element', MyElement);
+    ```
+  </Tab>
+</Tabs>
+
+The `@customElement` decorator calls `customElements.define()` automatically. Both approaches produce the same result.
+
+<Note>
+Tag names must contain a hyphen (`-`). This is a requirement of the Custom Elements specification.
+</Note>
+
+## Component class structure
+
+A typical Lit component class has three main static/instance members:
+
+```typescript
+import { LitElement, html, css } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
+
+@customElement('user-card')
+class UserCard extends LitElement {
+  // 1. Static styles — applied to the shadow root
+  static styles = css`
+    :host {
+      display: block;
+      border: 1px solid #ccc;
+      padding: 1rem;
+    }
+    h2 { margin: 0; }
+  `;
+
+  // 2. Reactive properties — trigger re-render on change
+  @property() name = 'Anonymous';
+  @property({ type: Number }) age = 0;
+
+  // 3. render() — returns the template for this update
+  render() {
+    return html`
+      <h2>${this.name}</h2>
+      <p>Age: ${this.age}</p>
+    `;
+  }
+}
+```
+
+<CardGroup cols={3}>
+  <Card title="static styles" icon="palette">
+    A `CSSResult` or array of `CSSResult` values applied once to the shadow root via `adoptedStyleSheets`.
+  </Card>
+  <Card title="static properties" icon="list">
+    Declares reactive properties. Each property gets an auto-generated accessor that calls `requestUpdate()` when set.
+  </Card>
+  <Card title="render()" icon="code">
+    Returns a `TemplateResult` describing what the component's shadow DOM should look like. Called on every update.
+  </Card>
+</CardGroup>
+
+## Shadow DOM encapsulation
+
+Lit renders each component into a [Shadow DOM](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_shadow_DOM) attached to the element. By default, this shadow root is created in `open` mode:
+
+```typescript
+// From ReactiveElement — controls how the shadow root is created
+static shadowRootOptions: ShadowRootInit = { mode: 'open' };
+```
+
+You can override `shadowRootOptions` to use closed mode or enable delegated focus:
+
+```typescript
+@customElement('my-element')
+class MyElement extends LitElement {
+  static shadowRootOptions = {
+    ...LitElement.shadowRootOptions,
+    mode: 'closed' as const,
+    delegatesFocus: true,
+  };
+
+  render() {
+    return html`<input />`;
+  }
+}
+```
+
+### What shadow DOM gives you
+
+- **Style isolation**: styles defined in `static styles` don't leak out; external styles don't bleed in (except via CSS custom properties and `::part()`).
+- **DOM isolation**: `document.querySelector()` can't reach inside a shadow root by default.
+- **Slot composition**: light DOM children provided by the consumer are projected into `<slot>` elements inside the shadow root.
+
+## Rendering into the shadow root
+
+The `createRenderRoot()` method creates the shadow root and applies styles. `LitElement` overrides it to set `renderOptions.renderBefore` so that `adoptedStyleSheets` always take precedence over any inline styles:
+
+```typescript
+// From LitElement source
+protected override createRenderRoot() {
+  const renderRoot = super.createRenderRoot();
+  this.renderOptions.renderBefore ??= renderRoot!.firstChild as ChildNode;
+  return renderRoot;
+}
+```
+
+To render into the element itself instead of a shadow root (light DOM rendering), override `createRenderRoot`:
+
+```typescript
+protected override createRenderRoot() {
+  return this; // render into the element's own children
+}
+```
+
+<Warning>
+Rendering into light DOM disables Shadow DOM style encapsulation. Use this only when you have a specific reason.
+</Warning>
+
+## Public properties vs. internal state
+
+Lit distinguishes between two kinds of reactive data:
+
+<Tabs>
+  <Tab title="Public properties (@property)">
+    Exposed as HTML attributes and settable by consumers of your element.
+
+    ```typescript
+    @property({ type: String })
+    label = 'Submit';
+    ```
+
+    Use `@property()` for data that element users should be able to set via HTML:
+
+    ```html
+    <my-button label="Save"></my-button>
+    ```
+  </Tab>
+  <Tab title="Internal state (@state)">
+    Private reactive data that triggers updates but is not reflected to attributes and not intended for external use.
+
+    ```typescript
+    @state()
+    private _open = false;
+    ```
+
+    `@state()` is equivalent to `@property({ state: true, attribute: false })`. Optimization tools may rename these properties.
+  </Tab>
+</Tabs>
+
+<Info>
+As a rule of thumb: use `@property()` for API surface that consumers configure, and `@state()` for internal bookkeeping that drives the component's own rendering.
+</Info>
+
+## Using a component in HTML
+
+Once registered, use the custom element tag anywhere in HTML:
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <script type="module" src="./my-element.js"></script>
+  </head>
+  <body>
+    <my-element></my-element>
+  </body>
+</html>
+```

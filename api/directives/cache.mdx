@@ -1,0 +1,97 @@
+---
+title: cache
+description: A directive that caches rendered DOM when switching between templates, avoiding expensive re-creation.
+---
+
+The `cache` directive retains the rendered DOM subtree for a template even when it is not currently displayed. When the active template switches back to a previously rendered one, the cached DOM is restored rather than re-created from scratch.
+
+## Import
+
+```typescript
+import { cache } from 'lit/directives/cache.js';
+```
+
+## Signature
+
+```typescript
+cache(value: unknown): DirectiveResult
+```
+
+## Parameters
+
+<ParamField path="value" type="unknown" required>
+  The value to render — typically a `TemplateResult`. When the template changes, the previous template's DOM is moved into an off-screen cache. When a previously cached template becomes active again, its DOM is restored from the cache. Non-template values are passed through directly without caching.
+</ParamField>
+
+## Return type
+
+`DirectiveResult` — an opaque value consumed by lit-html's template engine.
+
+## How it works
+
+Without `cache`, switching between two templates destroys the old DOM and creates new DOM every time:
+
+```
+Template A shown → Template B shown → Template A shown again
+                                       ↑ DOM for A is rebuilt from scratch
+```
+
+With `cache`, the first template's DOM is moved to a `DocumentFragment` when it is replaced, and restored from there when it becomes active again:
+
+```
+Template A shown → Template A cached → Template B shown → Template A restored from cache
+```
+
+The cache is keyed by the template's `strings` array (the static parts of the tagged template literal), so each unique template definition gets its own cache entry.
+
+## Example
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import { cache } from 'lit/directives/cache.js';
+
+@customElement('my-tabs')
+class MyTabs extends LitElement {
+  @state() private _activeTab: 'chart' | 'table' = 'chart';
+
+  private _chartTemplate() {
+    return html`<expensive-chart></expensive-chart>`;
+  }
+
+  private _tableTemplate() {
+    return html`<expensive-table></expensive-table>`;
+  }
+
+  render() {
+    return html`
+      <nav>
+        <button @click=${() => (this._activeTab = 'chart')}>Chart</button>
+        <button @click=${() => (this._activeTab = 'table')}>Table</button>
+      </nav>
+      ${cache(
+        this._activeTab === 'chart'
+          ? this._chartTemplate()
+          : this._tableTemplate()
+      )}
+    `;
+  }
+}
+```
+
+Each time the user switches tabs, the inactive template's DOM is cached rather than destroyed. Switching back restores the previously rendered state.
+
+## Performance tradeoffs
+
+<Note>
+  `cache` trades **memory** for **render time**. Cached DOM nodes are held in memory even when not displayed.
+
+  Use `cache` when:
+  - The templates being toggled are expensive to create (complex components, large subtrees).
+  - The user is likely to switch back and forth frequently.
+
+  Avoid `cache` when:
+  - Memory usage is a concern (e.g., mobile devices, many cached templates).
+  - The toggled templates are simple and cheap to recreate.
+  - Each render produces a different template structure (the cache will never be hit).
+</Note>

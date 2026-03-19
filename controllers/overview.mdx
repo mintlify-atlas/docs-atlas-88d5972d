@@ -1,0 +1,229 @@
+---
+title: Controllers overview
+description: Use reactive controllers to organize and reuse stateful logic across Lit components without inheritance.
+---
+
+Reactive controllers let you package component logic — state, behavior, and lifecycle hooks — into a reusable object that can be mixed into any `LitElement` or `ReactiveElement`. Unlike mixins, controllers compose cleanly: a component can host many controllers, and a controller can host other controllers.
+
+## The ReactiveController interface
+
+A controller is any object that implements the `ReactiveController` interface. All four lifecycle methods are optional — implement only the ones your controller needs.
+
+```typescript
+interface ReactiveController {
+  hostConnected?(): void;
+  hostDisconnected?(): void;
+  hostUpdate?(): void;
+  hostUpdated?(): void;
+}
+```
+
+| Method | When it's called |
+|---|---|
+| `hostConnected()` | When the host element connects to the DOM (mirrors `connectedCallback`) |
+| `hostDisconnected()` | When the host element disconnects from the DOM (mirrors `disconnectedCallback`) |
+| `hostUpdate()` | Just before the host runs its own `update()`. Only called client-side. |
+| `hostUpdated()` | Just after the host's `update()`, before `firstUpdated` and `updated`. Only called client-side. |
+
+## The ReactiveControllerHost interface
+
+Any object that can host controllers implements `ReactiveControllerHost`. `LitElement` and `ReactiveElement` both implement this interface automatically.
+
+```typescript
+interface ReactiveControllerHost {
+  addController(controller: ReactiveController): void;
+  removeController(controller: ReactiveController): void;
+  requestUpdate(): void;
+  readonly updateComplete: Promise<boolean>;
+}
+```
+
+| Member | Description |
+|---|---|
+| `addController(controller)` | Registers a controller and wires up its lifecycle callbacks to the host's lifecycle. If the host is already connected, `hostConnected()` is called immediately. |
+| `removeController(controller)` | Unregisters a controller. |
+| `requestUpdate()` | Schedules an asynchronous re-render of the host element. |
+| `updateComplete` | A `Promise<boolean>` that resolves when the host finishes its current update cycle. |
+
+## Adding a controller to a host
+
+Call `this.addController(controller)` inside a controller's constructor, passing the host as the first argument.
+
+```typescript
+class MyController implements ReactiveController {
+  private host: ReactiveControllerHost;
+
+  constructor(host: ReactiveControllerHost) {
+    this.host = host;
+    host.addController(this);
+  }
+
+  hostConnected() { /* ... */ }
+  hostDisconnected() { /* ... */ }
+}
+```
+
+Then create the controller in a component, passing `this` as the host:
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+
+@customElement('my-element')
+class MyElement extends LitElement {
+  private myController = new MyController(this);
+
+  render() {
+    return html`...`;
+  }
+}
+```
+
+<Note>
+  You can also remove a controller at any time by calling `this.removeController(controller)` on the host.
+</Note>
+
+## Controller lifecycle
+
+The diagram below shows how a controller's lifecycle maps to its host element's lifecycle.
+
+<Steps>
+  <Step title="Constructor">
+    The controller is instantiated and registers itself by calling `host.addController(this)`. If the host is already connected to the DOM, `hostConnected()` is called immediately.
+  </Step>
+  <Step title="hostConnected()">
+    Called when the host element connects to the DOM. Use this to set up event listeners, start observers, or subscribe to external data sources.
+  </Step>
+  <Step title="hostUpdate()">
+    Called before each host update (before `update()`). Use this to compute values that the host's `render()` will consume.
+  </Step>
+  <Step title="hostUpdated()">
+    Called after each host update (after `update()`). Use this to read DOM state that depends on the rendered output.
+  </Step>
+  <Step title="hostDisconnected()">
+    Called when the host element disconnects from the DOM. Use this to tear down event listeners, stop observers, or unsubscribe from external data sources.
+  </Step>
+</Steps>
+
+## Writing a custom reactive controller
+
+The example below implements a clock controller that exposes the current time and triggers a host re-render once per second.
+
+```typescript
+import { ReactiveController, ReactiveControllerHost } from '@lit/reactive-element';
+
+export class ClockController implements ReactiveController {
+  private host: ReactiveControllerHost;
+  private _timerID?: ReturnType<typeof setInterval>;
+
+  /** The current time, updated every second. */
+  value = new Date();
+
+  constructor(host: ReactiveControllerHost) {
+    this.host = host;
+    host.addController(this);
+  }
+
+  hostConnected() {
+    // Start updating the time once per second.
+    this._timerID = setInterval(() => {
+      this.value = new Date();
+      this.host.requestUpdate();
+    }, 1000);
+  }
+
+  hostDisconnected() {
+    // Clean up the interval when the host disconnects.
+    clearInterval(this._timerID);
+    this._timerID = undefined;
+  }
+}
+```
+
+Use the controller in a component:
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { ClockController } from './clock-controller.js';
+
+@customElement('my-clock')
+class MyClock extends LitElement {
+  private clock = new ClockController(this);
+
+  render() {
+    return html`<p>The time is ${this.clock.value.toLocaleTimeString()}.</p>`;
+  }
+}
+```
+
+Because `ClockController` calls `host.requestUpdate()` each tick, the component re-renders with the updated time without any extra boilerplate in the element itself.
+
+## Sharing logic across components
+
+A controller is a plain class — the same controller can be used in any number of components. Create the controller in each component's field initializer:
+
+```typescript
+@customElement('header-clock')
+class HeaderClock extends LitElement {
+  private clock = new ClockController(this);
+
+  render() {
+    return html`<header>${this.clock.value.toLocaleTimeString()}</header>`;
+  }
+}
+
+@customElement('footer-clock')
+class FooterClock extends LitElement {
+  private clock = new ClockController(this);
+
+  render() {
+    return html`<footer>${this.clock.value.toLocaleTimeString()}</footer>`;
+  }
+}
+```
+
+Each component gets its own controller instance with its own independent state. There is no shared mutable state between them.
+
+## Controller composition
+
+Controllers can themselves host other controllers. Pass the same `ReactiveControllerHost` reference down, or implement `ReactiveControllerHost` in the outer controller to form a standalone sub-host.
+
+The simplest pattern is to forward the host reference:
+
+```typescript
+import { ReactiveController, ReactiveControllerHost } from '@lit/reactive-element';
+import { ClockController } from './clock-controller.js';
+
+export class TimezoneClockController implements ReactiveController {
+  private host: ReactiveControllerHost;
+
+  // Compose a ClockController — its lifecycle is tied to the same host.
+  private clock: ClockController;
+
+  readonly timeZone: string;
+
+  constructor(host: ReactiveControllerHost, timeZone: string) {
+    this.host = host;
+    this.timeZone = timeZone;
+    // The inner controller registers itself with the host directly.
+    this.clock = new ClockController(host);
+    host.addController(this);
+  }
+
+  /** Formatted time in the requested timezone. */
+  get formatted() {
+    return this.clock.value.toLocaleTimeString('en-US', {
+      timeZone: this.timeZone,
+    });
+  }
+
+  // No lifecycle methods needed here — ClockController handles them.
+  hostConnected() {}
+  hostDisconnected() {}
+}
+```
+
+<Tip>
+  When composing controllers, each controller registers its own lifecycle callbacks with the host independently. You don't need to manually forward lifecycle calls from an outer controller to an inner one when both are registered on the same host.
+</Tip>

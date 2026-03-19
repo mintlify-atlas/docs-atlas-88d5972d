@@ -1,0 +1,333 @@
+---
+title: TypeScript
+description: Using TypeScript with Lit to get type safety, decorator support, and better tooling for your web components.
+---
+
+Lit is written in TypeScript and ships declaration files, so you get full type support out of the box. This guide covers the compiler settings, decorator patterns, and typing techniques you need for a well-typed Lit project.
+
+## Recommended tsconfig.json
+
+The following configuration mirrors the settings used in `lit-starter-ts` and the Lit packages themselves:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "es2021",
+    "module": "es2020",
+    "lib": ["es2021", "DOM", "DOM.Iterable"],
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "inlineSources": true,
+    "outDir": "./",
+    "rootDir": "./src",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitOverride": true
+  },
+  "include": ["src/**/*.ts"]
+}
+```
+
+### Key compiler options
+
+| Option | Value | Reason |
+|---|---|---|
+| `target` | `"es2021"` | Lit requires ES2019+ (class fields, `Object.fromEntries`). `es2021` covers all modern browsers and avoids unnecessary downleveling. |
+| `experimentalDecorators` | `true` | Required to use Lit's TypeScript decorators (`@customElement`, `@property`, `@state`, `@query`). |
+| `moduleResolution` | `"node"` | Required for resolving bare module specifiers such as `lit` and `lit/decorators.js`. Use `"NodeNext"` for Node.js ESM packages. |
+| `strict` | `true` | Recommended. Enables `noImplicitAny`, `strictNullChecks`, and related checks. |
+| `noImplicitOverride` | `true` | Recommended for Lit. Forces you to annotate methods that override a base class method with the `override` keyword, which the Lit source itself uses throughout. |
+
+<Note>
+Do **not** set `useDefineForClassFields: true` when `experimentalDecorators` is `true`. TypeScript uses `useDefineForClassFields` semantics by default when `target` is `ES2022` or higher, which conflicts with legacy decorator behavior. Keep `target` at `es2021` or explicitly set `useDefineForClassFields: false`.
+</Note>
+
+## Decorators
+
+Lit's decorators are imported from `lit/decorators.js`.
+
+### @customElement
+
+Registers the class as a custom element and adds it to the `CustomElementRegistry`.
+
+```typescript my-element.ts
+import {LitElement, html, css} from 'lit';
+import {customElement, property, state, query} from 'lit/decorators.js';
+
+@customElement('my-element')
+export class MyElement extends LitElement {
+  // ...
+}
+
+// Augment the global HTMLElementTagNameMap so that
+// document.querySelector('my-element') returns MyElement.
+declare global {
+  interface HTMLElementTagNameMap {
+    'my-element': MyElement;
+  }
+}
+```
+
+### @property
+
+Declares a reactive property that syncs with an HTML attribute.
+
+```typescript
+@property()
+name = 'World'; // inferred as string
+
+@property({type: Number})
+count = 0; // inferred as number
+
+@property({type: Boolean, reflect: true})
+disabled = false;
+
+@property({attribute: 'my-value'})
+myValue = '';
+```
+
+The optional argument is a `PropertyDeclaration` object. Import the type when you need to annotate a property options variable:
+
+```typescript
+import type {PropertyDeclaration} from 'lit';
+
+const options: PropertyDeclaration = {
+  type: Number,
+  reflect: true,
+};
+
+@property(options)
+count = 0;
+```
+
+### @state
+
+Declares internal reactive state that does not correspond to an attribute. Equivalent to `@property` with `{state: true}`.
+
+```typescript
+import {state} from 'lit/decorators.js';
+
+@state()
+private _open = false;
+
+@state()
+private _items: string[] = [];
+```
+
+### @query
+
+Converts a class field into a getter that calls `querySelector` on `this.renderRoot`. The return type is `Element | null` by default; you should annotate the field with a more specific type.
+
+```typescript
+import {query} from 'lit/decorators.js';
+
+@query('#myButton')
+private _button!: HTMLButtonElement;
+
+@query('input')
+private _input!: HTMLInputElement | null;
+```
+
+<Warning>
+Using the non-null assertion (`!`) on a `@query` field tells TypeScript the element always exists, but the decorator returns `null` if the element is not in the render root. Be careful when accessing the field before the first render, or when the element might be conditionally rendered.
+</Warning>
+
+The `cache` flag caches the result after the first query:
+
+```typescript
+@query('.container', true)
+private _container!: HTMLDivElement;
+```
+
+<Info>
+As of Lit 3.1, accessing a cached `@query` field before the first update logs a dev-mode warning and does **not** cache the `null` result.
+</Info>
+
+### @queryAll
+
+Like `@query`, but calls `querySelectorAll` and returns a `NodeList`.
+
+```typescript
+import {queryAll} from 'lit/decorators.js';
+
+@queryAll('li')
+private _items!: NodeListOf<HTMLLIElement>;
+```
+
+### @queryAsync
+
+Returns a `Promise` that resolves after the next update, useful when querying elements that may not exist yet.
+
+```typescript
+import {queryAsync} from 'lit/decorators.js';
+
+@queryAsync('input')
+private _inputAsync!: Promise<HTMLInputElement | null>;
+```
+
+## Typing reactive properties
+
+For explicit or complex types, annotate the property directly. TypeScript infers simple types from the initializer.
+
+```typescript
+import {LitElement} from 'lit';
+import {property, state} from 'lit/decorators.js';
+
+@customElement('user-card')
+export class UserCard extends LitElement {
+  @property({type: String})
+  name: string = '';
+
+  @property({type: Number})
+  age: number = 0;
+
+  @property({attribute: false})
+  data: Record<string, unknown> = {};
+
+  @state()
+  private _selected: string | null = null;
+}
+```
+
+## Typing events
+
+Use the `CustomEvent<T>` generic to type the `detail` payload of custom events.
+
+```typescript
+// Dispatching a typed custom event
+this.dispatchEvent(
+  new CustomEvent<{count: number}>('count-changed', {
+    detail: {count: this.count},
+    bubbles: true,
+    composed: true,
+  })
+);
+```
+
+To listen for typed events in another component or test:
+
+```typescript
+element.addEventListener('count-changed', (e: Event) => {
+  const event = e as CustomEvent<{count: number}>;
+  console.log(event.detail.count);
+});
+```
+
+For stricter event typing, augment the element's event map:
+
+```typescript
+declare global {
+  interface HTMLElementEventMap {
+    'count-changed': CustomEvent<{count: number}>;
+  }
+}
+```
+
+With this declaration, the event listener callback is automatically typed:
+
+```typescript
+element.addEventListener('count-changed', (e) => {
+  // e.detail is typed as {count: number}
+  console.log(e.detail.count);
+});
+```
+
+## Generic components
+
+You can write generic Lit components by parameterizing the class. The type parameter can be used in properties and the render method.
+
+```typescript
+import {LitElement, html} from 'lit';
+import {customElement, property} from 'lit/decorators.js';
+
+// Generic base class (not registered as a custom element)
+export class SelectBase<T> extends LitElement {
+  @property({attribute: false})
+  items: T[] = [];
+
+  @property({attribute: false})
+  selected: T | null = null;
+
+  // Override in subclasses to render each item
+  protected renderItem(_item: T): unknown {
+    return html`${String(_item)}`;
+  }
+
+  override render() {
+    return html`
+      <ul>
+        ${this.items.map((item) => html`<li>${this.renderItem(item)}</li>`)}
+      </ul>
+    `;
+  }
+}
+
+// Concrete subclass registered as a custom element
+@customElement('string-select')
+export class StringSelect extends SelectBase<string> {}
+```
+
+## Strict mode tips
+
+With `strict: true`, TypeScript enables `strictNullChecks`, which affects how you work with shadow DOM queries and optional properties.
+
+```typescript
+// With strictNullChecks, querySelector returns Element | null
+const btn = this.shadowRoot!.querySelector('button');
+if (btn !== null) {
+  btn.click();
+}
+
+// Using the non-null assertion for brevity (only when you're certain)
+this.shadowRoot!.querySelector('button')!.focus();
+```
+
+The `override` keyword is required on any method that overrides a base class method when `noImplicitOverride` is `true`:
+
+```typescript
+export class MyElement extends LitElement {
+  override render() {
+    return html`<p>Hello</p>`;
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+    // ...
+  }
+}
+```
+
+## ts-lit-plugin
+
+The `lit-starter-ts` project includes `ts-lit-plugin`, a TypeScript language service plugin that adds template type checking for Lit's `html` tagged template literal.
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "plugins": [
+      {
+        "name": "ts-lit-plugin",
+        "strict": true
+      }
+    ]
+  }
+}
+```
+
+Install it alongside the TypeScript compiler:
+
+```bash
+npm install --save-dev ts-lit-plugin
+```
+
+With the plugin active, your editor will warn about unknown element names, missing attributes, and type mismatches inside `html` template literals.

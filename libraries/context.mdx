@@ -1,0 +1,304 @@
+---
+title: "Context"
+description: "Share data across a component tree without prop drilling using @lit/context."
+---
+
+## Overview
+
+Passing data deep into a component tree requires threading props through every intermediate element — even those that don't use the data themselves. `@lit/context` solves this with the [W3C Web Components Community Group Context Protocol](https://github.com/webcomponents-cg/community-protocols/blob/main/proposals/context.md): a provider element makes a value available, and any descendant can consume it directly, regardless of nesting depth.
+
+Under the hood the protocol uses a bubbling `context-request` CustomEvent. A consumer dispatches the event; the nearest ancestor provider intercepts it, stops propagation, and invokes the consumer's callback with the current value.
+
+## Installation
+
+```bash
+npm install @lit/context
+```
+
+## Core concepts
+
+### createContext()
+
+`createContext` stamps a typed key that ties providers to consumers. Two calls with the same primitive key (string, `Symbol.for`) return the same context; two calls with distinct keys (plain object, `Symbol()`) are always separate.
+
+```typescript
+import {createContext} from '@lit/context';
+
+export interface Theme {
+  primaryColor: string;
+  fontFamily: string;
+}
+
+// String key — shared across any module that imports the same string
+export const themeContext = createContext<Theme>('theme');
+```
+
+```typescript
+// Symbol.for — also shared by key name
+export const themeContext = createContext<Theme>(Symbol.for('theme'));
+
+// Symbol() — unique, never collides
+export const themeContext = createContext<Theme>(Symbol('theme'));
+```
+
+**Signature:**
+
+```typescript
+function createContext<ValueType, K = unknown>(key: K): Context<K, ValueType>
+```
+
+### ContextProvider controller
+
+`ContextProvider` is a `ReactiveController` that listens for `context-request` events on its host element and responds with the current value. It can be attached to any `HTMLElement`; for Lit elements it registers itself automatically.
+
+```typescript
+new ContextProvider(host: HostElement, options: {
+  context: C;
+  initialValue?: ContextType<C>;
+})
+```
+
+To update the provided value after construction, call `provider.setValue(newValue)`.
+
+### ContextConsumer controller
+
+`ContextConsumer` dispatches a `context-request` event when its host connects and stores the received value on `consumer.value`.
+
+```typescript
+new ContextConsumer(host: HostElement, options: {
+  context: C;
+  callback?: (value: ContextType<C>, dispose?: () => void) => void;
+  subscribe?: boolean; // receive future updates from the provider
+})
+```
+
+Set `subscribe: true` to keep receiving updates whenever the provider calls `setValue`.
+
+### @provide() decorator
+
+The `@provide` decorator creates a `ContextProvider` controller and wires it to a class accessor property. Assigning the property automatically calls `setValue` on the underlying controller.
+
+```typescript
+import {provide} from '@lit/context';
+import {themeContext, Theme} from './theme-context.js';
+
+class MyApp extends LitElement {
+  @provide({context: themeContext})
+  theme: Theme = {primaryColor: '#344cfc', fontFamily: 'sans-serif'};
+}
+```
+
+**Signature:**
+
+```typescript
+function provide<ValueType>({
+  context,
+}: {
+  context: Context<unknown, ValueType>;
+}): ProvideDecorator<ValueType>
+```
+
+### @consume() decorator
+
+The `@consume` decorator creates a `ContextConsumer` controller and updates the decorated property when the context value changes.
+
+```typescript
+import {consume} from '@lit/context';
+import {themeContext, Theme} from './theme-context.js';
+
+class MyButton extends LitElement {
+  @consume({context: themeContext, subscribe: true})
+  theme?: Theme;
+}
+```
+
+**Signature:**
+
+```typescript
+function consume<ValueType>({
+  context,
+  subscribe,
+}: {
+  context: Context<unknown, ValueType>;
+  subscribe?: boolean;
+}): ConsumeDecorator<ValueType>
+```
+
+## Complete example
+
+This example builds a theme system: `<my-app>` provides the theme, and a deeply nested `<my-button>` consumes it.
+
+<Steps>
+  <Step title="Define the context key">
+    ```typescript
+    // theme-context.ts
+    import {createContext} from '@lit/context';
+
+    export interface Theme {
+      primaryColor: string;
+      fontFamily: string;
+    }
+
+    export const themeContext = createContext<Theme>('theme');
+    ```
+  </Step>
+
+  <Step title="Provide the context">
+    ```typescript
+    // my-app.ts
+    import {LitElement, html} from 'lit';
+    import {customElement, property} from 'lit/decorators.js';
+    import {provide} from '@lit/context';
+    import {themeContext, Theme} from './theme-context.js';
+
+    @customElement('my-app')
+    class MyApp extends LitElement {
+      @provide({context: themeContext})
+      @property({attribute: false})
+      theme: Theme = {
+        primaryColor: '#344cfc',
+        fontFamily: 'system-ui',
+      };
+
+      render() {
+        return html`
+          <my-button></my-button>
+          <button @click=${this._toggleTheme}>Switch theme</button>
+        `;
+      }
+
+      private _toggleTheme() {
+        this.theme = {
+          primaryColor: this.theme.primaryColor === '#344cfc' ? '#e63946' : '#344cfc',
+          fontFamily: this.theme.fontFamily,
+        };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Consume the context">
+    ```typescript
+    // my-button.ts
+    import {LitElement, html, css} from 'lit';
+    import {customElement} from 'lit/decorators.js';
+    import {consume} from '@lit/context';
+    import {themeContext, Theme} from './theme-context.js';
+
+    @customElement('my-button')
+    class MyButton extends LitElement {
+      @consume({context: themeContext, subscribe: true})
+      theme?: Theme;
+
+      render() {
+        return html`
+          <button style="
+            background: ${this.theme?.primaryColor};
+            font-family: ${this.theme?.fontFamily};
+          ">
+            <slot></slot>
+          </button>
+        `;
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Using the controller directly
+
+When decorators aren't available, use the controllers directly:
+
+<CodeGroup>
+
+```typescript provider
+import {LitElement, html} from 'lit';
+import {customElement} from 'lit/decorators.js';
+import {ContextProvider} from '@lit/context';
+import {themeContext, Theme} from './theme-context.js';
+
+@customElement('my-app')
+class MyApp extends LitElement {
+  private _provider = new ContextProvider(this, {
+    context: themeContext,
+    initialValue: {primaryColor: '#344cfc', fontFamily: 'system-ui'},
+  });
+
+  updateTheme(theme: Theme) {
+    this._provider.setValue(theme);
+  }
+
+  render() {
+    return html`<my-button></my-button>`;
+  }
+}
+```
+
+```typescript consumer
+import {LitElement, html} from 'lit';
+import {customElement} from 'lit/decorators.js';
+import {ContextConsumer} from '@lit/context';
+import {themeContext} from './theme-context.js';
+
+@customElement('my-button')
+class MyButton extends LitElement {
+  private _theme = new ContextConsumer(this, {
+    context: themeContext,
+    subscribe: true,
+  });
+
+  render() {
+    const theme = this._theme.value;
+    return html`
+      <button style="background: ${theme?.primaryColor}">
+        <slot></slot>
+      </button>
+    `;
+  }
+}
+```
+
+</CodeGroup>
+
+## Providing context from a plain element
+
+`ContextProvider` works with any `HTMLElement`, not just custom elements. This is useful for providing context at the document or app level without introducing an extra custom element:
+
+```typescript
+import {ContextProvider} from '@lit/context';
+import {themeContext} from './theme-context.js';
+
+const provider = new ContextProvider(document.body, {
+  context: themeContext,
+  initialValue: {primaryColor: '#344cfc', fontFamily: 'system-ui'},
+});
+
+// Manually call hostConnected() if consumers may already exist in the DOM
+provider.hostConnected();
+```
+
+## Handling late-upgraded providers
+
+If a provider element upgrades after consumers have already connected, those consumers will miss the initial `context-request` event. `ContextRoot` solves this by collecting unsatisfied requests and re-dispatching them when a new provider connects:
+
+```typescript
+import {ContextRoot} from '@lit/context';
+
+const root = new ContextRoot();
+root.attach(document.body);
+```
+
+<Note>
+  `ContextRoot` uses `WeakRef`, which requires a modern browser. It is not supported in IE11.
+</Note>
+
+## How events work
+
+The protocol uses two custom events, both composed and bubbling:
+
+| Event | Direction | Purpose |
+|---|---|---|
+| `context-request` | Consumer → ancestor | Requests a context value |
+| `context-provider` | Provider → window | Announces a provider has connected |
+
+When `subscribe: true`, the provider passes an `unsubscribe` function to the consumer's callback. The consumer stores it and calls it on disconnect, or when a closer provider takes over.

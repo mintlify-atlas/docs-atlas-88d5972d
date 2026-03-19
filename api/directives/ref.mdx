@@ -1,0 +1,109 @@
+---
+title: ref
+description: A directive that provides a reference to a rendered DOM element.
+---
+
+The `ref` directive gives you access to a rendered DOM element. It can be used with a `Ref` object created by `createRef()`, or with a callback function. Place `ref(...)` in an element binding (not a child position) to receive the element when it is connected to the DOM.
+
+## Import
+
+```typescript
+import { ref, createRef } from 'lit/directives/ref.js';
+import type { Ref, RefOrCallback } from 'lit/directives/ref.js';
+```
+
+## Functions and types
+
+### `createRef`
+
+```typescript
+createRef<T = Element>(): Ref<T>
+```
+
+Creates a new `Ref` container. The element is accessible via `.value` after the component renders.
+
+### `ref`
+
+```typescript
+ref(refOrCallback: RefOrCallback): DirectiveResult
+```
+
+### Types
+
+```typescript
+class Ref<T = Element> {
+  readonly value?: T;
+}
+
+type RefOrCallback<T = Element> = Ref<T> | ((el: T | undefined) => void);
+```
+
+## Parameters
+
+<ParamField path="refOrCallback" type="RefOrCallback">
+  Either a `Ref` object (created with `createRef()`) whose `.value` will be set to the element, or a callback function that will be called with the element when it is connected and with `undefined` when it is disconnected.
+</ParamField>
+
+## Return type
+
+`DirectiveResult` — an opaque value that renders as `nothing` in the DOM.
+
+## Lifecycle behavior
+
+- When the element is connected to the DOM, the `Ref.value` is set or the callback is called with the element.
+- When the element is disconnected or removed, `Ref.value` is set to `undefined` or the callback is called with `undefined`.
+- If a callback ref moves to a different element in a subsequent render, it is first called with `undefined` for the old element, then called with the new element.
+
+## Example: using `createRef()`
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { ref, createRef } from 'lit/directives/ref.js';
+import type { Ref } from 'lit/directives/ref.js';
+
+@customElement('my-input')
+class MyInput extends LitElement {
+  private _inputRef: Ref<HTMLInputElement> = createRef();
+
+  render() {
+    return html`<input ${ref(this._inputRef)} type="text" />`;
+  }
+
+  focus() {
+    this._inputRef.value?.focus();
+  }
+}
+```
+
+## Example: using a callback ref
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { ref } from 'lit/directives/ref.js';
+
+@customElement('my-canvas')
+class MyCanvas extends LitElement {
+  private _onCanvasConnected(canvas: HTMLCanvasElement | undefined) {
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx?.fillRect(0, 0, 100, 100);
+    }
+  }
+
+  render() {
+    return html`<canvas ${ref(this._onCanvasConnected)}></canvas>`;
+  }
+}
+```
+
+## When to use
+
+- You need to call imperative DOM APIs (e.g., `.focus()`, `.play()`, `.getContext()`) on an element after it renders.
+- You need to measure an element's dimensions after it is in the DOM.
+
+## When not to use
+
+- To read element properties that are already reflected as attributes — use declarative bindings instead.
+- As a replacement for reactive properties or state — refs do not trigger re-renders.

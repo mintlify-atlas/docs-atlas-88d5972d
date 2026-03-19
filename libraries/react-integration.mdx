@@ -1,0 +1,223 @@
+---
+title: "React integration"
+description: "Wrap Lit web components for use in React with full prop and event support using @lit/react."
+---
+
+## Overview
+
+React renders custom elements as generic HTML, which means it passes all props as attributes (strings) and cannot bind to custom event names. `@lit/react` bridges this gap with two utilities:
+
+- **`createComponent`** — wraps a web component class in a React `forwardRef` component that sets element properties directly and maps React prop names to DOM events.
+- **`useController`** — turns a Lit `ReactiveController` into a React hook.
+
+## Installation
+
+```bash
+npm install @lit/react
+```
+
+`react` must also be installed (any React 16.8+ version with hooks).
+
+## createComponent()
+
+`createComponent` returns a typed React component backed by your custom element.
+
+### Signature
+
+```typescript
+function createComponent<
+  I extends HTMLElement,
+  E extends EventNames = {},
+>(options: Options<I, E>): ReactWebComponent<I, E>
+
+interface Options<I extends HTMLElement, E extends EventNames = {}> {
+  react: typeof React;       // the React module
+  tagName: string;           // registered custom element tag
+  elementClass: Constructor<I>; // the custom element class
+  events?: E;                // prop name → event name mapping
+  displayName?: string;      // shown in React DevTools
+}
+```
+
+### Parameters
+
+<AccordionGroup>
+  <Accordion title="react">
+    Pass the `React` module you import in your project. This avoids bundling conflicts when React is loaded in multiple ways.
+  </Accordion>
+  <Accordion title="tagName">
+    The tag name your element is registered with via `customElements.define`. Must match exactly.
+  </Accordion>
+  <Accordion title="elementClass">
+    The custom element class. `createComponent` inspects its prototype to identify which React props should be set as element properties rather than HTML attributes.
+  </Accordion>
+  <Accordion title="events">
+    An object mapping React prop names (e.g. `onActivate`) to the DOM event names your element dispatches (e.g. `'activate'`). Functions passed via these props are wired to the element as event listeners.
+  </Accordion>
+  <Accordion title="displayName">
+    Optional label for React DevTools. Defaults to the element class name.
+  </Accordion>
+</AccordionGroup>
+
+## Complete example
+
+<Steps>
+  <Step title="Define a Lit component">
+    ```typescript
+    // src/elements/my-toggle.ts
+    import {LitElement, html} from 'lit';
+    import {customElement, property} from 'lit/decorators.js';
+
+    @customElement('my-toggle')
+    export class MyToggle extends LitElement {
+      @property({type: Boolean, reflect: true}) checked = false;
+      @property() label = 'Toggle';
+
+      private _handleClick() {
+        this.checked = !this.checked;
+        this.dispatchEvent(
+          new CustomEvent('my-change', {detail: {checked: this.checked}, bubbles: true})
+        );
+      }
+
+      render() {
+        return html`
+          <button @click=${this._handleClick}>
+            ${this.checked ? '✓' : '○'} ${this.label}
+          </button>
+        `;
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Wrap it with createComponent">
+    ```typescript
+    // src/components/MyToggle.tsx
+    import React from 'react';
+    import {createComponent, type EventName} from '@lit/react';
+    import {MyToggle as MyToggleElement} from '../elements/my-toggle.js';
+
+    export interface MyChangeEvent extends CustomEvent {
+      detail: {checked: boolean};
+    }
+
+    export const MyToggle = createComponent({
+      react: React,
+      tagName: 'my-toggle',
+      elementClass: MyToggleElement,
+      events: {
+        onMyChange: 'my-change' as EventName<MyChangeEvent>,
+      },
+      displayName: 'MyToggle',
+    });
+    ```
+  </Step>
+
+  <Step title="Use it in a React component">
+    ```tsx
+    // src/App.tsx
+    import React, {useState} from 'react';
+    import {MyToggle, type MyChangeEvent} from './components/MyToggle.js';
+
+    export function App() {
+      const [isChecked, setIsChecked] = useState(false);
+
+      return (
+        <div>
+          <MyToggle
+            checked={isChecked}
+            label="Enable notifications"
+            onMyChange={(e: MyChangeEvent) => setIsChecked(e.detail.checked)}
+          />
+          <p>Notifications are {isChecked ? 'on' : 'off'}.</p>
+        </div>
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+## TypeScript types
+
+`@lit/react` exports several types for TypeScript users:
+
+| Type | Description |
+|---|---|
+| `EventName<T extends Event>` | Brands a string as carrying a specific event type; use it in the `events` map to type-narrow event callbacks |
+| `ReactWebComponent<I, E>` | The return type of `createComponent` |
+| `WebComponentProps<I>` | Props type for using a web component directly in JSX without `createComponent` |
+
+### Typed events with EventName
+
+Without `EventName`, event callbacks receive the base `Event` type. Cast the event name to get the precise type:
+
+```typescript
+import {type EventName} from '@lit/react';
+
+const MyToggle = createComponent({
+  react: React,
+  tagName: 'my-toggle',
+  elementClass: MyToggleElement,
+  events: {
+    // onMyChange prop will have type (e: MyChangeEvent) => void
+    onMyChange: 'my-change' as EventName<MyChangeEvent>,
+  },
+});
+```
+
+## useController()
+
+`useController` converts a Lit `ReactiveController` into a React hook, driving the full controller lifecycle from React's own hooks.
+
+```typescript
+import {useController} from '@lit/react/use-controller.js';
+
+const useMousePosition = () => {
+  const controller = useController(
+    React,
+    (host) => new MouseController(host)
+  );
+  return controller.position;
+};
+```
+
+Controller lifecycle methods map to React hooks as follows:
+
+| Controller lifecycle | React equivalent |
+|---|---|
+| `constructor` / `hostConnected` | `useState` initial value |
+| `hostDisconnected` | `useLayoutEffect` cleanup (empty deps) |
+| `hostUpdate` | Hook body (runs every render) |
+| `hostUpdated` | `useLayoutEffect` |
+| `requestUpdate` | `useState` setter |
+
+## Server-side rendering and Next.js
+
+Custom elements cannot execute in a Node.js SSR environment. `createComponent` uses `useLayoutEffect` internally, which React suppresses during server rendering, so the component renders as an empty tag on the server and hydrates on the client.
+
+<Note>
+  For full SSR support (including server-rendered shadow DOM), use `@lit/ssr-react` together with `@lit/react`. The `createComponent` wrapper passes element properties via a special `_$litProps$` bag when `@lit/ssr-react`'s patched `createElement` is detected.
+</Note>
+
+### Next.js setup
+
+Mark wrapper components with `'use client'` so Next.js treats them as client components and does not attempt to server-render the web component:
+
+```typescript
+'use client';
+
+import React from 'react';
+import {createComponent} from '@lit/react';
+import {MyToggle as MyToggleElement} from '../elements/my-toggle.js';
+
+export const MyToggle = createComponent({
+  react: React,
+  tagName: 'my-toggle',
+  elementClass: MyToggleElement,
+});
+```
+
+<Warning>
+  Avoid importing web component classes in server components. The element's module may reference browser-only globals such as `HTMLElement`, causing build errors.
+</Warning>

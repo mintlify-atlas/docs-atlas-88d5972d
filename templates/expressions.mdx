@@ -1,0 +1,206 @@
+---
+title: Expressions
+description: All binding types available in Lit templates — child content, attributes, properties, events, and element bindings.
+---
+
+Lit templates are written as tagged template literals using the `html` tag. Dynamic values are inserted using JavaScript expressions inside `${}` placeholders. The position of an expression in the template determines what kind of binding is created.
+
+## Child content expressions
+
+An expression in the text content of an element creates a **child part** — a dynamic text node or subtree in the DOM.
+
+```typescript
+html`<p>Hello, ${this.name}!</p>`
+```
+
+### Nested templates
+
+You can nest `html` template results inside other templates. Lit efficiently updates the nested content in place when it re-renders.
+
+```typescript
+const header = (title: string) => html`<h1>${title}</h1>`;
+
+html`
+  <div>
+    ${header('My App')}
+    <p>Welcome!</p>
+  </div>
+`
+```
+
+### Arrays and iterables
+
+Any iterable — including `Array`, `Set`, generator functions, and the results of directives like `map()` or `repeat()` — can be used in a child expression. Each item is rendered in order.
+
+```typescript
+const items = ['apple', 'banana', 'cherry'];
+
+html`
+  <ul>
+    ${items.map((item) => html`<li>${item}</li>`)}
+  </ul>
+`
+```
+
+## Attribute binding
+
+An expression inside an attribute value (using double quotes) creates an **attribute part**. The value is coerced to a string and set as the attribute.
+
+```typescript
+html`<input type="text" placeholder="${this.placeholder}">`
+```
+
+You can concatenate static and dynamic parts in a single attribute:
+
+```typescript
+html`<div class="card ${this.isActive ? 'active' : ''}"></div>`
+```
+
+<Note>
+  Attribute bindings set the HTML attribute — the string representation. To set
+  a DOM property directly, use a [property binding](#property-binding) instead.
+</Note>
+
+## Boolean attribute binding
+
+Prefix the attribute name with `?` to create a **boolean attribute part**. The attribute is added when the value is truthy and removed when it is falsy.
+
+```typescript
+html`<button ?disabled="${this.isLoading}">Submit</button>`
+```
+
+```typescript
+html`<details ?open="${this.expanded}"><summary>Details</summary>...</details>`
+```
+
+## Property binding
+
+Prefix the attribute name with `.` to create a **property part**. The value is assigned directly to the DOM property instead of setting an HTML attribute.
+
+```typescript
+html`<input .value="${this.inputValue}">`
+```
+
+```typescript
+// Pass an object or array directly to a custom element property
+html`<my-list .items="${this.dataItems}"></my-list>`
+```
+
+Property bindings are required any time you need to pass non-string values — objects, arrays, booleans, numbers — to an element.
+
+## Event listener binding
+
+Prefix the attribute name with `@` to create an **event part**. The value is added as an event listener for the named event.
+
+```typescript
+html`<button @click="${this.handleClick}">Click me</button>`
+```
+
+```typescript
+html`<input @input="${(e: InputEvent) => this.handleInput(e)}">`
+```
+
+Event listeners are added with `addEventListener` and removed automatically when the binding changes. When you render a component method as the listener, Lit binds the listener to the component's `host` option so `this` refers to the component instance.
+
+<Tip>
+  Pass a method reference rather than an arrow function when possible. Lit
+  reuses the same listener object across renders, avoiding unnecessary
+  `removeEventListener`/`addEventListener` calls.
+</Tip>
+
+## Element reference binding
+
+An expression placed directly on an element tag (not in an attribute) creates an **element part**. The `ref()` directive uses element parts to get a reference to the rendered element.
+
+```typescript
+import {createRef, ref} from 'lit/directives/ref.js';
+
+const inputRef = createRef<HTMLInputElement>();
+
+html`<input ${ref(inputRef)}>` 
+// inputRef.value is the HTMLInputElement after render
+```
+
+You can also use a callback:
+
+```typescript
+html`<canvas ${ref((el) => this.setupCanvas(el as HTMLCanvasElement))}></canvas>`
+```
+
+See [ref](/templates/built-in-directives#ref) for the full directive documentation.
+
+## Renderable values
+
+The following types are valid in child expressions:
+
+| Value type | Behavior |
+|---|---|
+| `string`, `number`, `bigint`, `boolean` | Rendered as a text node |
+| `TemplateResult` (from `html`, `svg`, `mathml`) | Rendered as DOM nodes |
+| `DirectiveResult` | Handled by the directive |
+| `Array` / `Iterable` | Each item rendered in sequence |
+| `Node` | Inserted directly into the DOM |
+| `undefined`, `null`, `''` | Renders nothing (no DOM node) |
+| `nothing` | Renders nothing (preferred over `null`/`undefined`) |
+| `noChange` | Leaves the current DOM value unchanged |
+
+In attribute, property, and boolean attribute expressions the acceptable values are narrower — see the binding type sections above.
+
+## Sentinels: `nothing` and `noChange`
+
+Lit exports two special sentinel values from `lit`:
+
+### `nothing`
+
+Signals that a child part should render no content, or that an attribute should be removed.
+
+```typescript
+import {html, nothing} from 'lit';
+
+html`
+  <div class="card">
+    ${this.isAdmin ? html`<button>Delete</button>` : nothing}
+  </div>
+`
+```
+
+Behavior by binding type:
+
+- **Child expression** — renders no DOM nodes (same as `null`, `undefined`, or `''`)
+- **Attribute binding** — removes the attribute from the element
+- **Property binding** — sets the property to `undefined`
+- **Boolean attribute** — removes the attribute
+
+<Tip>
+  Prefer `nothing` over `null`, `undefined`, or `''` for consistency.
+  The behavior of `nothing` is well-defined across all binding types, while
+  `null` and `undefined` behave differently in attribute vs. child expressions.
+</Tip>
+
+### `noChange`
+
+Signals that a value was handled by a directive and the DOM should not be updated. You will not typically use `noChange` in application code — it is used internally by directives.
+
+```typescript
+import {noChange} from 'lit';
+
+// Inside a custom directive: returning noChange skips the DOM write
+return noChange;
+```
+
+## Static expressions
+
+Regular expressions cannot be used for tag names or attribute names because Lit parses the template strings once and reuses the parsed structure. To include dynamic tag names or attribute names you must use `staticHtml` and `literal` from `lit/static-html.js`.
+
+```typescript
+import {staticHtml, literal} from 'lit/static-html.js';
+
+const tag = literal`h${level}`; // level must be known at parse time
+html`<${tag}>Heading</${tag}>`;
+```
+
+<Warning>
+  Static expressions re-parse the template for every unique combination of
+  static values. Use them sparingly and only when the set of possible values is
+  small and bounded.
+</Warning>

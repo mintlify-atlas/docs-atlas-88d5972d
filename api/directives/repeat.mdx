@@ -1,0 +1,118 @@
+---
+title: repeat
+description: A directive that efficiently renders and updates a list of items using key-based DOM diffing.
+---
+
+The `repeat` directive renders an iterable of items using a template function, and efficiently updates the DOM when the list changes by tracking each item with a user-provided key. When items are reordered, added, or removed, `repeat` moves existing DOM nodes rather than recreating them.
+
+## Import
+
+```typescript
+import { repeat } from 'lit/directives/repeat.js';
+```
+
+## Signature
+
+```typescript
+// With key function (recommended)
+repeat<T>(
+  items: Iterable<T>,
+  keyFn: KeyFn<T>,
+  template: ItemTemplate<T>
+): DirectiveResult
+
+// Without key function
+repeat<T>(
+  items: Iterable<T>,
+  template: ItemTemplate<T>
+): DirectiveResult
+```
+
+### Types
+
+```typescript
+type KeyFn<T> = (item: T, index: number) => unknown;
+type ItemTemplate<T> = (item: T, index: number) => unknown;
+```
+
+## Parameters
+
+<ParamField path="items" type="Iterable<T>" required>
+  Any iterable collection of items to render — arrays, Sets, generators, etc.
+</ParamField>
+
+<ParamField path="keyFn" type="KeyFn<T>">
+  A function that returns a unique key for each item. Takes the item and its index, and returns any value used as the identity key. When provided, keys must be unique across all items in the list — duplicate keys result in undefined behavior.
+</ParamField>
+
+<ParamField path="template" type="ItemTemplate<T>" required>
+  A function that takes an item and its index and returns the value to render for that item (typically a `TemplateResult`).
+</ParamField>
+
+## Return type
+
+`DirectiveResult` — an opaque value consumed by lit-html's template engine.
+
+## How keyed diffing works
+
+When a `keyFn` is provided, `repeat` maintains a strict key-to-DOM mapping:
+
+- If an item with an existing key moves to a new position, its DOM node is moved rather than recreated.
+- If a key is removed, its DOM node is destroyed.
+- If a new key appears, a new DOM node is created.
+
+This ensures that state local to a DOM subtree (such as focus, scroll position, or animation state) is preserved across list updates.
+
+Without a `keyFn`, `repeat` behaves similarly to mapping items to templates — DOM nodes are reused positionally and may be updated with different item data.
+
+## Example
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import { repeat } from 'lit/directives/repeat.js';
+
+interface Task {
+  id: number;
+  label: string;
+}
+
+@customElement('task-list')
+class TaskList extends LitElement {
+  @state() private _tasks: Task[] = [
+    { id: 1, label: 'Write tests' },
+    { id: 2, label: 'Fix bug' },
+    { id: 3, label: 'Deploy' },
+  ];
+
+  render() {
+    return html`
+      <ul>
+        ${repeat(
+          this._tasks,
+          (task) => task.id,
+          (task, index) => html`<li>${index + 1}. ${task.label}</li>`
+        )}
+      </ul>
+    `;
+  }
+}
+```
+
+## When to use
+
+- The list can be reordered, and you want to preserve per-item DOM state (focus, animations, form values).
+- Items are frequently inserted or removed from the middle of a long list.
+- Each item has a stable, unique identifier.
+
+## When not to use
+
+<Note>
+  For simple lists that only append, are replaced entirely, or do not have stable item identities, a plain `Array.map` inside a template expression is simpler and has similar performance:
+
+  ```typescript
+  html`<ul>${this._items.map((item) => html`<li>${item.label}</li>`)}</ul>`
+  ```
+
+  `repeat` adds overhead from key tracking. Only use it when the diffing behavior provides a measurable benefit.
+</Note>

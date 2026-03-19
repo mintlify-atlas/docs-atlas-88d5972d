@@ -1,0 +1,120 @@
+---
+title: SSR overview
+description: An overview of server-side rendering for Lit components, including how @lit-labs/ssr works, declarative shadow DOM, and available integrations.
+---
+
+Server-side rendering (SSR) lets you generate the initial HTML for your Lit components on the server, so browsers receive fully-rendered markup before any JavaScript executes. This improves time-to-first-paint, search engine indexing, and resilience when JavaScript is slow or unavailable.
+
+## Why SSR matters for web components
+
+Web components rendered purely on the client produce an empty custom element tag in the initial HTML. The browser must download, parse, and execute JavaScript before the component's shadow DOM appears. This creates:
+
+- **Slower first paint**: Users see unstyled or blank content until JS loads.
+- **Poor SEO**: Crawlers that do not execute JavaScript see no component content.
+- **Layout shifts**: Components appear progressively as scripts execute.
+
+SSR solves these problems by emitting the full shadow DOM as HTML on the server, using a browser standard called [Declarative Shadow DOM (DSD)](#declarative-shadow-dom).
+
+## How @lit-labs/ssr works
+
+`@lit-labs/ssr` is a Node.js package that renders Lit templates and `LitElement` components to HTML strings or streams. It works without a real browser by using a minimal DOM shim — just enough to register and render custom elements.
+
+The rendering pipeline:
+
+1. Your server imports Lit component definitions into Node.js (the DOM shim provides `customElements`, a minimal `HTMLElement`, etc.).
+2. You call `renderThunked()` (or `render()`) with a lit-html template result.
+3. The function returns a `ThunkedRenderResult` — an array of strings and lazy thunks — which is consumed to produce HTML.
+4. The HTML is sent to the browser. `LitElement` shadow roots appear inside `<template shadowrootmode="open">` tags (Declarative Shadow DOM).
+5. On the client, the browser parses DSD natively (or via polyfill) and attaches shadow roots before JavaScript runs.
+6. `@lit-labs/ssr-client` hydrates the existing DOM so Lit can update it efficiently.
+
+<Note>
+`@lit-labs/ssr` is part of [Lit Labs](https://lit.dev/docs/libraries/labs/) and is pre-release software. The API may receive breaking changes before stabilizing.
+</Note>
+
+## Declarative Shadow DOM
+
+Declarative Shadow DOM (DSD) is the browser feature that makes SSR of web components possible. Instead of calling `attachShadow()` in JavaScript, the shadow root is declared directly in HTML:
+
+```html
+<my-element>
+  <template shadowrootmode="open">
+    <style>b { color: red; }</style>
+    Hello <b>World</b>!
+  </template>
+</my-element>
+```
+
+When the browser parses this markup, it creates a real shadow root from the `<template>` element — no JavaScript required. `@lit-labs/ssr` emits this format automatically for every `LitElement`.
+
+DSD is supported natively in all modern browsers. For older browsers you can use the [`@webcomponents/template-shadowroot`](https://github.com/webcomponents/template-shadowroot) polyfill.
+
+## Server-only templates
+
+`@lit-labs/ssr` also exports its own `html` tagged template literal for **server-only templates**. These templates:
+
+- Can render full documents including `<!DOCTYPE html>`.
+- Can render into elements Lit normally cannot (e.g., `<title>`, `<textarea>`, `<script type="text/json">`).
+- Omit the hydration marker comments, making the output slightly smaller.
+- **Cannot** be hydrated or rendered on the client.
+
+You can embed normal hydratable Lit templates or custom elements inside a server-only template; those inner parts will still hydrate normally.
+
+```typescript
+import {renderThunked, html} from '@lit-labs/ssr';
+import './my-element.js';
+
+const ssrResult = renderThunked(html`
+  <!DOCTYPE html>
+  <html>
+    <head><title>My App</title></head>
+    <body>
+      <my-element></my-element>
+    </body>
+  </html>
+`);
+```
+
+## Supported environments
+
+`@lit-labs/ssr` targets **Node.js** (14+). It can run in two modes:
+
+<CardGroup cols={2}>
+  <Card title="Node.js global scope" icon="server">
+    Import component definitions directly into the Node.js process. The DOM shim is installed on the global object automatically. Simplest setup for most servers.
+  </Card>
+  <Card title="VM context" icon="cube">
+    Load component modules into an isolated VM context using `renderModule()`. Each request gets a fresh global, preventing state leakage between requests. Requires `--experimental-vm-modules`.
+  </Card>
+</CardGroup>
+
+## Streaming
+
+`renderThunked()` returns a lazy `ThunkedRenderResult` that produces HTML incrementally. You can stream this directly to the HTTP response using `RenderResultReadable`, a Node.js `Readable` stream:
+
+```typescript
+import {renderThunked} from '@lit-labs/ssr';
+import {RenderResultReadable} from '@lit-labs/ssr/lib/render-result-readable.js';
+
+const ssrResult = renderThunked(myTemplate(data));
+response.body = new RenderResultReadable(ssrResult);
+```
+
+Streaming reduces memory usage and lets the browser start parsing HTML before the full response is complete.
+
+## Available integration packages
+
+<CardGroup cols={2}>
+  <Card title="@lit-labs/ssr" icon="code" href="/ssr/getting-started">
+    Core SSR package. Renders Lit templates and LitElement components to HTML in Node.js.
+  </Card>
+  <Card title="@lit-labs/ssr-client" icon="browser" href="/ssr/hydration">
+    Client-side hydration support. Re-associates server-rendered DOM with Lit's reactive system.
+  </Card>
+  <Card title="@lit-labs/nextjs" icon="layer-group">
+    Next.js plugin for deep server rendering of Lit components. Wraps `@lit-labs/ssr-react` and handles the webpack configuration automatically.
+  </Card>
+  <Card title="@lit-labs/eleventy-plugin-lit" icon="plug">
+    Eleventy plugin that pre-renders Lit components at build time, with optional hydration.
+  </Card>
+</CardGroup>

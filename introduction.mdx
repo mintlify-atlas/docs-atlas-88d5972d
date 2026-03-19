@@ -1,0 +1,114 @@
+---
+title: Introduction
+description: Lit is a simple library for building fast, lightweight web components.
+---
+
+# Introduction
+
+Lit is a simple library for building fast, lightweight web components. At its core is a boilerplate-killing component base class that provides reactive state, scoped styles, and a declarative template system that's tiny, fast, and expressive.
+
+## Why Lit?
+
+Web components are a set of native browser APIs that let you create reusable custom HTML elements. Lit makes building them straightforward — without the overhead of a full framework.
+
+<CardGroup cols={2}>
+  <Card title="Standards-Based" icon="circle-check">
+    Built on web standards: Custom Elements, Shadow DOM, and HTML templates. Works everywhere the web does.
+  </Card>
+  <Card title="Tiny & Fast" icon="bolt">
+    Lit adds only about 5KB (minified + compressed) on top of the browser's built-in web component APIs.
+  </Card>
+  <Card title="Reactive" icon="rotate">
+    Declared reactive properties automatically trigger efficient re-renders when their values change.
+  </Card>
+  <Card title="Interoperable" icon="puzzle-piece">
+    Web components built with Lit work anywhere HTML works — in any framework or with no framework at all.
+  </Card>
+</CardGroup>
+
+## What Lit provides
+
+Lit builds on native web component APIs to give you:
+
+- **`LitElement`** — A component base class that adds reactive properties and declarative templates to standard Custom Elements
+- **`lit-html`** — A fast, expressive HTML templating library using tagged template literals
+- **Reactive properties** — Property declarations that automatically trigger updates and attribute reflection
+- **Scoped styles** — CSS encapsulation via Shadow DOM, with the `css` tagged template literal
+- **Built-in directives** — A rich set of template helpers for conditionals, lists, refs, and more
+- **Reactive controllers** — A composition model for sharing stateful logic across components
+
+## Core packages
+
+<CardGroup cols={2}>
+  <Card title="lit" icon="box" href="/api/lit">
+    The primary package. Includes everything from `lit-html` and `lit-element`. Start here.
+  </Card>
+  <Card title="lit-element" icon="cube" href="/api/lit-element">
+    The `LitElement` base class for building custom elements with reactive properties and templates.
+  </Card>
+  <Card title="lit-html" icon="code" href="/api/lit-html">
+    The standalone HTML templating library. Use for rendering templates without a component base class.
+  </Card>
+  <Card title="@lit/reactive-element" icon="atom" href="/api/reactive-element">
+    Low-level base class for reactive custom elements. Extend this to build your own base class.
+  </Card>
+</CardGroup>
+
+## Additional libraries
+
+Lit ships a family of companion packages for common use cases:
+
+| Package | Description |
+|---|---|
+| `@lit/context` | Pass data through element trees without prop drilling |
+| `@lit/task` | Manage async operations with automatic re-rendering |
+| `@lit/localize` | Localize Lit templates and strings |
+| `@lit/react` | Wrap Lit components for use in React |
+| `@lit-labs/ssr` | Server-side render Lit components |
+| `@lit-labs/router` | Client-side routing for Lit apps |
+| `@lit-labs/motion` | Animation directives for Lit |
+| `@lit-labs/observers` | Reactive controllers for platform observers |
+
+## Quick example
+
+A complete Lit component in just a few lines:
+
+```typescript my-element.ts
+import {LitElement, html, css} from 'lit';
+import {customElement, property} from 'lit/decorators.js';
+
+@customElement('my-element')
+export class MyElement extends LitElement {
+  static styles = css`
+    :host {
+      display: block;
+      padding: 16px;
+    }
+    h1 {
+      color: #344cfc;
+    }
+  `;
+
+  @property()
+  name = 'World';
+
+  render() {
+    return html`<h1>Hello, ${this.name}!</h1>`;
+  }
+}
+```
+
+Use it in HTML just like any built-in element:
+
+```html index.html
+<my-element name="Lit"></my-element>
+```
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first Lit component in minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Lit and set up your project
+  </Card>
+</CardGroup>

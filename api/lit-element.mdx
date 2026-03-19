@@ -1,0 +1,382 @@
+---
+title: LitElement
+description: API reference for the LitElement base class for building reactive web components with lit-html templates.
+---
+
+`LitElement` is the base class for Lit web components. It extends `ReactiveElement` with lit-html rendering, managing reactive properties, lifecycle callbacks, and Shadow DOM.
+
+```typescript
+import { LitElement, html, css } from 'lit';
+
+class MyElement extends LitElement {
+  static styles = css`:host { display: block; }`;
+
+  static properties = {
+    name: { type: String },
+  };
+
+  render() {
+    return html`<p>Hello, ${this.name}!</p>`;
+  }
+}
+
+customElements.define('my-element', MyElement);
+```
+
+## Class signature
+
+```typescript
+class LitElement extends ReactiveElement
+```
+
+`LitElement` is exported from both the `lit` and `lit-element` packages.
+
+## Static properties
+
+### `styles`
+
+Array of styles to apply to the element's shadow root. Use the `css` tag to define styles.
+
+```typescript
+static styles?: CSSResultGroup;
+```
+
+```typescript
+static styles = [
+  css`:host { display: block; }`,
+  css`p { color: blue; }`,
+];
+```
+
+Styles are deduplicated, preserving the last instance. This ensures that subclass styles override superclass styles.
+
+<ResponseField name="CSSResultGroup" type="CSSResult | CSSStyleSheet | Array<CSSResult | CSSStyleSheet | Array<...>>">
+  Accepts a single `CSSResult` (from the `css` tag), a native `CSSStyleSheet`, or any nested array of those.
+</ResponseField>
+
+### `properties`
+
+User-supplied map of property names to `PropertyDeclaration` options. Each declared property gets a reactive accessor that triggers an update when set.
+
+```typescript
+static properties: PropertyDeclarations;
+```
+
+```typescript
+static properties = {
+  adjective: { type: String },
+  count: { type: Number, reflect: true },
+  active: { type: Boolean, attribute: 'is-active' },
+  data: { type: Object },
+};
+```
+
+<ResponseField name="PropertyDeclarations" type="{ [key: string]: PropertyDeclaration }">
+  A plain object mapping property names to their options.
+</ResponseField>
+
+#### `PropertyDeclaration` options
+
+<ResponseField name="type" type="unknown">
+  Type hint for the attribute converter. Supported built-in values: `String`, `Number`, `Boolean`, `Object`, `Array`.
+</ResponseField>
+
+<ResponseField name="attribute" type="boolean | string">
+  Controls the observed attribute. `false` disables attribute observation. `true` (default) observes the lowercased property name. A string overrides the attribute name.
+</ResponseField>
+
+<ResponseField name="reflect" type="boolean">
+  When `true`, the property value is reflected back to the attribute on change. Defaults to `false`.
+</ResponseField>
+
+<ResponseField name="converter" type="AttributeConverter">
+  Custom converter for attribute-to-property and property-to-attribute conversion. May be a function `(value, type) => propertyValue` or an object with `fromAttribute` and `toAttribute` methods.
+</ResponseField>
+
+<ResponseField name="state" type="boolean">
+  When `true`, the property is internal reactive state. It is not reflected to an attribute and is not part of the element's public API.
+</ResponseField>
+
+<ResponseField name="noAccessor" type="boolean">
+  When `true`, no accessor is generated. You must call `this.requestUpdate(name, oldValue)` manually when the property changes.
+</ResponseField>
+
+<ResponseField name="hasChanged" type="(value, oldValue) => boolean">
+  Custom change detection function. Return `true` to request an update. Defaults to a strict identity check (`!Object.is(value, old)`).
+</ResponseField>
+
+<ResponseField name="useDefault" type="boolean">
+  When `true`, the initial property value is treated as the default. The initial value does not reflect, and removing the attribute restores the default.
+</ResponseField>
+
+### `shadowRootOptions`
+
+Options passed to `attachShadow`. Override to create a closed shadow root or set `delegatesFocus`.
+
+```typescript
+static shadowRootOptions: ShadowRootInit = { mode: 'open' };
+```
+
+## Instance properties
+
+### `renderRoot`
+
+The node or `ShadowRoot` into which the element's DOM is rendered. Defaults to an open shadow root. Available after the first `connectedCallback`.
+
+```typescript
+readonly renderRoot: HTMLElement | DocumentFragment;
+```
+
+### `renderOptions`
+
+Options passed to `lit-html`'s `render` function on each update. Defaults to `{ host: this }`.
+
+```typescript
+readonly renderOptions: RenderOptions;
+```
+
+### `updateComplete`
+
+A `Promise` that resolves when the element has completed its current update cycle. The resolved value is `true` if the update completed without triggering another update, `false` if a property was set inside `updated()`.
+
+```typescript
+get updateComplete(): Promise<boolean>
+```
+
+```typescript
+await this.updateComplete;
+// DOM is now up to date
+```
+
+### `hasUpdated`
+
+`true` after the first update completes. The element's `renderRoot` exists before `hasUpdated` is `true` only when `connectedCallback` has been called.
+
+```typescript
+hasUpdated: boolean;
+```
+
+### `isUpdatePending`
+
+`true` when a reactive property change has been recorded and an update has been enqueued but has not yet completed.
+
+```typescript
+isUpdatePending: boolean;
+```
+
+## Methods to override
+
+These are the primary methods you implement in your `LitElement` subclass.
+
+### `render()`
+
+Defines the element's template. Called on every update. Return any value renderable by a lit-html `ChildPart` — typically an `HTMLTemplateResult` from the `html` tag. Setting properties inside `render()` does not trigger another update.
+
+```typescript
+protected render(): unknown
+```
+
+```typescript
+render() {
+  return html`<p>Hello, ${this.name}!</p>`;
+}
+```
+
+### `willUpdate(changedProperties)`
+
+Called before `update()` to compute values needed during the update. Use this to derive properties that depend on other properties.
+
+```typescript
+protected willUpdate(changedProperties: PropertyValues): void
+```
+
+```typescript
+willUpdate(changedProperties: PropertyValues<this>) {
+  if (changedProperties.has('firstName') || changedProperties.has('lastName')) {
+    this.fullName = `${this.firstName} ${this.lastName}`;
+  }
+}
+```
+
+<ParamField path="changedProperties" type="PropertyValues">
+  A `Map` of changed property keys to their previous values. Use `PropertyValues<this>` for strongly-typed key/value access.
+</ParamField>
+
+### `update(changedProperties)`
+
+Reflects property values to attributes and calls `render()` to update the DOM via lit-html. Setting properties inside `update()` does not trigger another update. Call `super.update(changedProperties)` when overriding.
+
+```typescript
+protected update(changedProperties: PropertyValues): void
+```
+
+<ParamField path="changedProperties" type="PropertyValues">
+  Map of changed properties with their previous values.
+</ParamField>
+
+### `firstUpdated(changedProperties)`
+
+Called after the element's first update. Use for one-time work that requires access to the rendered DOM, such as focusing an element.
+
+Setting properties inside `firstUpdated()` triggers another update after this update cycle completes.
+
+```typescript
+protected firstUpdated(changedProperties: PropertyValues): void
+```
+
+```typescript
+firstUpdated() {
+  this.renderRoot.querySelector('input')?.focus();
+}
+```
+
+### `updated(changedProperties)`
+
+Called after each update. Use for post-update tasks via DOM APIs. Setting properties inside `updated()` triggers another update.
+
+```typescript
+protected updated(changedProperties: PropertyValues): void
+```
+
+### `shouldUpdate(changedProperties)`
+
+Controls whether `update()` is called. Return `false` to skip an update. By default, always returns `true`.
+
+```typescript
+protected shouldUpdate(changedProperties: PropertyValues): boolean
+```
+
+### `createRenderRoot()`
+
+Creates and returns the node into which the element renders. By default creates an open shadow root and applies the element's styles. Override to render into the element's children instead of a shadow root.
+
+```typescript
+protected createRenderRoot(): HTMLElement | DocumentFragment
+```
+
+```typescript
+// Render into the element's light DOM instead
+overrride createRenderRoot() {
+  return this;
+}
+```
+
+### `scheduleUpdate()`
+
+Schedules an element update. Override to change update timing by returning a `Promise`. The update awaits the returned `Promise`. Must call `super.scheduleUpdate()` when overriding.
+
+```typescript
+protected scheduleUpdate(): void | Promise<unknown>
+```
+
+```typescript
+// Schedule updates just before the next frame
+protected override async scheduleUpdate(): Promise<unknown> {
+  await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+  super.scheduleUpdate();
+}
+```
+
+## Lifecycle callbacks
+
+### `connectedCallback()`
+
+Called when the element is added to the document. Sets up the render root, enables updating, and notifies registered controllers. Call `super.connectedCallback()` when overriding.
+
+```typescript
+override connectedCallback(): void
+```
+
+### `disconnectedCallback()`
+
+Called when the element is removed from the document. Notifies registered controllers and directives. Call `super.disconnectedCallback()` when overriding.
+
+```typescript
+override disconnectedCallback(): void
+```
+
+### `attributeChangedCallback(name, old, value)`
+
+Called when an observed attribute changes. Converts the attribute value to the property value using the property's converter. Generally does not need to be overridden — override a property setter instead.
+
+```typescript
+attributeChangedCallback(name: string, _old: string | null, value: string | null): void
+```
+
+## Inherited ReactiveElement methods
+
+### `requestUpdate(name?, oldValue?, options?)`
+
+Requests an asynchronous update. Call without arguments to request an update based on external state changes. Call with `name` and `oldValue` when manually implementing a property setter.
+
+```typescript
+requestUpdate(
+  name?: PropertyKey,
+  oldValue?: unknown,
+  options?: PropertyDeclaration
+): void
+```
+
+<ParamField path="name" type="PropertyKey">
+  The property name that changed. Omit when requesting an update due to external state.
+</ParamField>
+
+<ParamField path="oldValue" type="unknown">
+  The previous value of the property.
+</ParamField>
+
+<ParamField path="options" type="PropertyDeclaration">
+  Property options to use instead of those previously configured.
+</ParamField>
+
+### `addController(controller)`
+
+Registers a `ReactiveController` to participate in the element's reactive lifecycle.
+
+```typescript
+addController(controller: ReactiveController): void
+```
+
+### `removeController(controller)`
+
+Removes a previously registered `ReactiveController`.
+
+```typescript
+removeController(controller: ReactiveController): void
+```
+
+### `getUpdateComplete()`
+
+Override point for the `updateComplete` promise. Use this instead of overriding the `updateComplete` getter.
+
+```typescript
+protected getUpdateComplete(): Promise<boolean>
+```
+
+```typescript
+override async getUpdateComplete() {
+  const result = await super.getUpdateComplete();
+  await this._myChild.updateComplete;
+  return result;
+}
+```
+
+## `RenderOptions` interface
+
+Options controlling how lit-html renders into a container.
+
+<ResponseField name="host" type="object">
+  Object used as `this` for event listeners. Typically the component instance. `LitElement` sets this to `this` by default.
+</ResponseField>
+
+<ResponseField name="renderBefore" type="ChildNode | null">
+  A DOM node before which to render content in the container.
+</ResponseField>
+
+<ResponseField name="creationScope" type="{ importNode(node: Node, deep?: boolean): Node }">
+  Node used for cloning the template via `importNode`. Controls the `ownerDocument` of the rendered DOM. Defaults to the global `document`.
+</ResponseField>
+
+<ResponseField name="isConnected" type="boolean">
+  Initial connected state for the top-level part. Defaults to `true`. Set to `false` if the initial render occurs in a disconnected tree.
+</ResponseField>

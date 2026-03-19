@@ -1,0 +1,91 @@
+---
+title: live
+description: A directive that checks the live DOM value of a binding rather than the previously set value, ensuring the DOM stays in sync with your template.
+---
+
+The `live` directive forces a binding to update by comparing the new value against the **current live DOM value** instead of the previously bound value. This is useful when the DOM value may have changed outside of Lit's control, such as user input in a form field.
+
+## Import
+
+```typescript
+import { live } from 'lit/directives/live.js';
+```
+
+## Signature
+
+```typescript
+live<T>(value: T): DirectiveResult
+```
+
+## Parameters
+
+<ParamField path="value" type="T" required>
+  The value to bind. `live` checks this against the current live DOM value rather than the cached value from the previous render. If they differ, the binding is updated; if they are equal, it is skipped.
+</ParamField>
+
+## Return type
+
+`DirectiveResult` — an opaque value consumed by lit-html's template engine.
+
+## Constraints
+
+<Warning>
+  `live` can only be used on attribute, property, or boolean attribute bindings. It cannot be used in child expressions or event bindings.
+
+  `live` performs a **strict equality** check against the live DOM value. Because attribute bindings always read strings from the DOM, avoid using `live` with non-string values on attribute bindings — the comparison will always fail (because `String(value) !== value` for non-strings), causing an update on every render.
+</Warning>
+
+## Why `live` is needed
+
+Lit's default behavior is to skip a binding update if the new value is the same as the **previously set** value. This is an optimization, but it breaks controlled-input patterns:
+
+1. User types into an `<input>`, changing the live `.value` property.
+2. A state update triggers re-render, but the bound value hasn't changed.
+3. Lit sees "same value as last time" and skips the binding — the input is not reset.
+
+`live` fixes this by comparing the new value against the actual current DOM value instead:
+
+```
+Without live: newValue === lastBoundValue → skip update
+With live:    newValue === element.value  → update if different
+```
+
+## Example: controlled input
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import { live } from 'lit/directives/live.js';
+
+@customElement('controlled-input')
+class ControlledInput extends LitElement {
+  @state() private _value = '';
+
+  private _onChange(e: Event) {
+    const input = e.target as HTMLInputElement;
+    // Normalize: strip leading spaces
+    this._value = input.value.trimStart();
+  }
+
+  render() {
+    return html`
+      <input
+        .value=${live(this._value)}
+        @input=${this._onChange}
+      />
+    `;
+  }
+}
+```
+
+If the user types a leading space, `_onChange` trims it and sets `_value` to the same string it was before the space was typed. Without `live`, Lit would not update the input (since `_value` didn't change), so the space would remain visible. With `live`, the input's current DOM value is compared and the input is reset to the trimmed value.
+
+## When to use
+
+- Implementing controlled form inputs where the displayed value is normalized or validated before being written back.
+- Binding to DOM properties that can be mutated externally (e.g., by user interaction or a third-party library).
+
+## When not to use
+
+- On most property or attribute bindings — Lit's default dirty-checking is correct and more efficient.
+- With non-string values on attribute bindings — the type coercion will cause updates on every render.

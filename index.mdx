@@ -1,97 +1,94 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: Lit Documentation
+description: Simple. Fast. Web Components.
 ---
 
-## Setting up
+# Lit
 
-Get your documentation site up and running in minutes.
+Lit is a simple library for building fast, lightweight web components. At its core is a boilerplate-killing component base class that provides reactive state, scoped styles, and a declarative template system that's tiny, fast, and expressive.
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first Lit component in minutes
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Installation" icon="download" href="/installation">
+    Install Lit and set up your project
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Core Concepts" icon="book" href="/concepts/components">
+    Learn the fundamentals of Lit components
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api/lit">
+    Browse the full API documentation
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Why Lit?
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Standards-Based" icon="circle-check">
+    Built on web standards: Custom Elements, Shadow DOM, and HTML templates. Works everywhere the web does.
+  </Card>
+  <Card title="Tiny & Fast" icon="bolt">
+    Lit adds only about 5KB (minified + compressed) on top of the browser's built-in web component APIs.
+  </Card>
+  <Card title="Reactive" icon="rotate">
+    Declared reactive properties automatically trigger efficient re-renders when their values change.
+  </Card>
+  <Card title="Interoperable" icon="puzzle-piece">
+    Web components built with Lit work anywhere HTML works — in any framework or with no framework at all.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Quick example
 
-## Need inspiration?
+```typescript my-element.ts
+import {LitElement, html, css} from 'lit';
+import {customElement, property} from 'lit/decorators.js';
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+@customElement('my-element')
+export class MyElement extends LitElement {
+  static styles = css`
+    :host {
+      display: block;
+      padding: 16px;
+    }
+    h1 { color: #344cfc; }
+  `;
+
+  @property()
+  name = 'World';
+
+  render() {
+    return html`<h1>Hello, ${this.name}!</h1>`;
+  }
+}
+```
+
+Use it in HTML just like any built-in element:
+
+```html
+<my-element name="Lit"></my-element>
+```
+
+## Explore the docs
+
+<CardGroup cols={2}>
+  <Card title="Components" icon="cube" href="/concepts/components">
+    Understand the LitElement component model
+  </Card>
+  <Card title="Templates" icon="file-code" href="/concepts/templates">
+    Learn Lit's expressive html tagged templates
+  </Card>
+  <Card title="Reactive Properties" icon="rotate" href="/concepts/reactive-properties">
+    Manage component state with reactive properties
+  </Card>
+  <Card title="Styles" icon="palette" href="/concepts/styles">
+    Apply scoped styles with Shadow DOM
+  </Card>
+  <Card title="Reactive Controllers" icon="gear" href="/controllers/overview">
+    Compose reusable stateful logic
+  </Card>
+  <Card title="Server-Side Rendering" icon="server" href="/ssr/overview">
+    Render Lit components on the server
+  </Card>
+</CardGroup>

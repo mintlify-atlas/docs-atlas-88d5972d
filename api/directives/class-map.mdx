@@ -1,0 +1,87 @@
+---
+title: classMap
+description: A directive that applies dynamic CSS classes to an element based on a key-value object.
+---
+
+The `classMap` directive efficiently adds and removes CSS classes on an element by mapping property names in a `ClassInfo` object to truthy or falsy values. Only properties with truthy values are added as classes; falsy values cause the class to be removed.
+
+## Import
+
+```typescript
+import { classMap } from 'lit/directives/class-map.js';
+```
+
+## Signature
+
+```typescript
+classMap(classInfo: ClassInfo): DirectiveResult
+```
+
+### Types
+
+```typescript
+interface ClassInfo {
+  [name: string]: string | boolean | number;
+}
+```
+
+## Parameters
+
+<ParamField path="classInfo" type="ClassInfo" required>
+  An object whose keys are CSS class names and whose values determine whether each class is applied. A truthy value adds the class; a falsy value (including `0`, `''`, `false`) removes it.
+</ParamField>
+
+## Return type
+
+`DirectiveResult` — an opaque value consumed by lit-html's template engine.
+
+## Constraints
+
+<Warning>
+  `classMap` must be used in the `class` attribute and must be the **only** expression in that attribute. Mixing `classMap` with other interpolations in the same `class` attribute will throw an error.
+
+  Static classes written directly in the attribute string (e.g., `class="base ${classMap(...)}"`) are preserved and never modified by the directive.
+</Warning>
+
+## Example
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import { classMap } from 'lit/directives/class-map.js';
+
+@customElement('my-button')
+class MyButton extends LitElement {
+  @state() private _active = false;
+  @state() private _disabled = false;
+
+  render() {
+    const classes = {
+      active: this._active,
+      disabled: this._disabled,
+      'has-icon': true,
+    };
+
+    return html`
+      <button class="base ${classMap(classes)}">
+        Click me
+      </button>
+    `;
+  }
+}
+```
+
+In this example:
+- `base` is a static class and is never touched by `classMap`.
+- `has-icon` is always present because its value is `true`.
+- `active` and `disabled` are toggled based on component state.
+
+## When to use
+
+- You need to toggle multiple classes based on component state or properties.
+- You want a clean, declarative alternative to string concatenation or ternary expressions in a `class` attribute.
+
+## When not to use
+
+- When you only need a single conditional class — a simple ternary expression is more readable: `` class="${this.active ? 'active' : ''}" ``.
+- Outside of a `class` attribute — `classMap` will throw if placed elsewhere.

@@ -1,0 +1,273 @@
+---
+title: Styles
+description: Learn how to add scoped styles to Lit components with the css tag, use Shadow DOM encapsulation, apply CSS custom properties for theming, and share styles across components.
+---
+
+Lit components use Shadow DOM to scope styles — styles defined inside a component don't affect the outside document, and external styles can't accidentally override component internals. Lit provides the `css` tagged template literal to define these styles in a way that is safe, performant, and composable.
+
+## The `css` tagged template literal
+
+```typescript
+import { css } from 'lit';
+
+const styles = css`
+  :host {
+    display: block;
+    color: var(--my-element-color, #333);
+  }
+
+  p {
+    margin: 0;
+    font-size: 1rem;
+  }
+`;
+```
+
+`css` returns a `CSSResult` object. Under the hood, Lit uses the `CSSResult` to construct a `CSSStyleSheet` (via the [Constructable Stylesheets](https://developer.mozilla.org/en-US/docs/Web/API/CSSStyleSheet/CSSStyleSheet) API) and applies it with `shadowRoot.adoptedStyleSheets`. This means a single `CSSStyleSheet` object is shared across all instances of a component — no per-instance style duplication.
+
+## Applying styles with `static styles`
+
+Assign a `CSSResult` or an array of them to `static styles`:
+
+```typescript
+import { LitElement, html, css } from 'lit';
+import { customElement } from 'lit/decorators.js';
+
+@customElement('my-card')
+class MyCard extends LitElement {
+  static styles = css`
+    :host {
+      display: block;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 1rem;
+    }
+
+    h2 {
+      margin-top: 0;
+    }
+  `;
+
+  render() {
+    return html`
+      <h2><slot name="title"></slot></h2>
+      <slot></slot>
+    `;
+  }
+}
+```
+
+`static styles` can accept:
+- A single `CSSResult`: `static styles = css`...``
+- An array of `CSSResult` values: `static styles = [baseStyles, css`...`]`
+- Native `CSSStyleSheet` objects (in browsers that support them)
+
+Duplicate stylesheet entries are automatically deduplicated — the last occurrence in the array wins.
+
+## Shadow DOM style scoping
+
+Styles defined in `static styles` apply only inside the component's shadow root. Selectors like `p`, `div`, or `.my-class` are scoped and will not match elements outside the shadow boundary.
+
+```typescript
+static styles = css`
+  /* Only matches <p> inside this component's shadow root */
+  p {
+    color: blue;
+  }
+`;
+```
+
+<Info>
+External global stylesheets don't penetrate the shadow boundary. Only CSS custom properties, `::part()`, and `::slotted()` can cross it.
+</Info>
+
+## The `:host` selector
+
+Target the component element itself (the custom element host) with `:host`:
+
+```typescript
+static styles = css`
+  :host {
+    display: block;       /* Custom elements are inline by default */
+    box-sizing: border-box;
+  }
+
+  /* Conditional styling based on an attribute */
+  :host([hidden]) {
+    display: none;
+  }
+
+  /* Context-dependent styling */
+  :host([variant='primary']) {
+    background: #344cfc;
+    color: white;
+  }
+`;
+```
+
+`:host([attr])` lets you apply styles based on reflected properties — a common pattern for public API flags like `disabled`, `hidden`, or `variant`.
+
+### `:host-context()`
+
+Match based on an ancestor outside the shadow root (limited browser support):
+
+```typescript
+static styles = css`
+  :host-context(.dark-theme) {
+    background: #1a1a1a;
+    color: white;
+  }
+`;
+```
+
+## CSS custom properties for theming
+
+CSS custom properties (variables) cross the shadow boundary, making them the primary mechanism for theming Lit components:
+
+```typescript
+// Component definition
+static styles = css`
+  :host {
+    --button-bg: #344cfc;
+    --button-color: white;
+    --button-radius: 4px;
+  }
+
+  button {
+    background: var(--button-bg);
+    color: var(--button-color);
+    border-radius: var(--button-radius);
+    border: none;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+  }
+`;
+```
+
+Consumers override these variables from outside:
+
+```css
+/* Global CSS */
+my-button {
+  --button-bg: #e53e3e;
+  --button-radius: 9999px;
+}
+```
+
+The `var(--name, fallback)` syntax lets you provide a default value used when the variable is not set.
+
+## CSS parts (`::part()`)
+
+Expose internal elements for external styling using the `part` attribute:
+
+```typescript
+render() {
+  return html`
+    <div part="container">
+      <span part="label">${this.label}</span>
+      <button part="button" @click=${this._click}>Go</button>
+    </div>
+  `;
+}
+```
+
+Consumers can then style named parts from outside the shadow root:
+
+```css
+my-element::part(button) {
+  background: green;
+  font-weight: bold;
+}
+
+my-element::part(label) {
+  font-style: italic;
+}
+```
+
+## Sharing styles across components
+
+Extract shared styles into a module and import them:
+
+```typescript
+// shared-styles.ts
+import { css } from 'lit';
+
+export const buttonReset = css`
+  button {
+    all: unset;
+    cursor: pointer;
+  }
+`;
+
+export const typography = css`
+  :host {
+    font-family: system-ui, sans-serif;
+    line-height: 1.5;
+  }
+`;
+```
+
+```typescript
+// my-element.ts
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { buttonReset, typography } from './shared-styles.js';
+
+@customElement('my-element')
+class MyElement extends LitElement {
+  static styles = [typography, buttonReset, css`
+    /* Component-specific styles */
+    :host { padding: 1rem; }
+  `];
+
+  render() {
+    return html`<button>Click</button>`;
+  }
+}
+```
+
+Because `CSSStyleSheet` objects are shared, the same stylesheet instance is reused across all components that include it — no duplication in memory.
+
+## `adoptedStyleSheets` for performance
+
+Lit automatically uses `adoptedStyleSheets` when the browser supports it:
+
+```typescript
+// From css-tag.ts
+export const supportsAdoptingStyleSheets: boolean =
+  global.ShadowRoot &&
+  (global.ShadyCSS === undefined || global.ShadyCSS.nativeShadow) &&
+  'adoptedStyleSheets' in Document.prototype &&
+  'replace' in CSSStyleSheet.prototype;
+```
+
+When `adoptedStyleSheets` is not available (older browsers), Lit falls back to inserting `<style>` elements into the shadow root.
+
+<Tip>
+To use a nonce for Content Security Policy (CSP) compliance with the `<style>` fallback, set `window.litNonce` to a server-generated nonce before loading your components:
+
+```html
+<script>window.litNonce = 'server-generated-nonce';</script>
+```
+</Tip>
+
+## Using `unsafeCSS`
+
+To include CSS from a non-literal source (e.g. a runtime value), use `unsafeCSS`:
+
+```typescript
+import { unsafeCSS } from 'lit';
+
+const brandColor = getComputedStyle(document.documentElement)
+  .getPropertyValue('--brand-color');
+
+const styles = css`
+  :host {
+    color: ${unsafeCSS(brandColor)};
+  }
+`;
+```
+
+<Warning>
+`unsafeCSS` bypasses the security check that prevents arbitrary strings from being used as CSS. Only use it with trusted values — never with user-supplied input.
+</Warning>

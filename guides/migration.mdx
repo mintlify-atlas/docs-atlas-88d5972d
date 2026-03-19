@@ -1,0 +1,323 @@
+---
+title: Migration
+description: Upgrading Lit components between major versions, including changes from Lit 2.x to Lit 3.x, and from lit-element 2.x and lit-html 1.x.
+---
+
+This guide covers the breaking changes in each major version of Lit and how to update your code.
+
+## Lit 3.x (lit@3, lit-element@4, lit-html@3)
+
+Lit 3.0.0 was released alongside `lit-element@4.0.0` and `lit-html@3.0.0`. The `lit` package is the recommended entry point for all new projects.
+
+### Breaking changes in Lit 3.0
+
+#### IE11 support dropped
+
+Lit 3 no longer supports Internet Explorer 11. The polyfill configuration and IE11-specific code paths have been removed. If you need to support older browsers, stay on Lit 2.
+
+#### Generated accessors now wrap user-defined accessors
+
+In Lit 3, the generated accessor for a reactive property now **wraps** any user-defined accessor and automatically calls `this.requestUpdate()` in the setter. In previous versions, if you defined your own accessor for a `@property`-decorated field, you had to call `requestUpdate()` yourself.
+
+Users who set `noAccessor: true` must still call `this.requestUpdate()` themselves:
+
+```typescript
+// Lit 3 — user accessor is wrapped automatically
+@property({type: Number})
+set count(value: number) {
+  this._count = value;
+  // No need to call requestUpdate() — Lit does it
+}
+get count() {
+  return this._count;
+}
+
+// Or with noAccessor: true, you remain responsible
+@property({type: Number, noAccessor: true})
+set count(value: number) {
+  this._count = value;
+  this.requestUpdate('count', this._count);
+}
+```
+
+#### @queryAssignedNodes selector argument removed
+
+The deprecated selector argument to `@queryAssignedNodes` has been removed. Migrate to `@queryAssignedElements` if you need selector filtering:
+
+```typescript
+// Lit 2 — deprecated
+@queryAssignedNodes('list', true, '.item')
+listItems!: NodeListOf<HTMLElement>;
+
+// Lit 3 — use @queryAssignedElements
+@queryAssignedElements({slot: 'list', flatten: true, selector: '.item'})
+listItems!: HTMLElement[];
+```
+
+#### Experimental hydrate modules removed
+
+The `lit-html/experimental-hydrate.js` and `lit-element/experimental-hydrate-support.js` modules have been removed. Use `@lit-labs/ssr-client` instead:
+
+```typescript
+// Lit 2
+import 'lit-element/experimental-hydrate-support.js';
+
+// Lit 3
+import '@lit-labs/ssr-client/lit-element-hydrate-support.js';
+```
+
+#### renderRoot type change
+
+The type of `ReactiveElement.renderRoot` and the return type of `createRenderRoot()` have changed from `Element | ShadowRoot` to `HTMLElement | DocumentFragment` to match `lit-html`'s `render()` method.
+
+#### Lit 1 → 2 migration warnings removed
+
+The dev-mode warnings that guided migration from Lit 1 to Lit 2 have been removed in Lit 3.
+
+#### SVG templates use replaceWith()
+
+Lit now uses `replaceWith()` for SVG template rendering. This is a standards-compliant change that should be transparent to most users.
+
+#### Boolean attribute parts use toggleAttribute()
+
+Boolean attribute bindings (`` ?disabled=${...} ``) now use `toggleAttribute()` internally. This is a standards-compliant change that should not affect behavior.
+
+### Minor additions in Lit 3.0
+
+- `PropertyValues.get()` now returns `T | undefined` (previously `T`). Update code that assumed the return type was never `undefined`.
+- `@query()` decorated fields now allow `null` in their type.
+- Decorators work with the `accessor` keyword when `experimentalDecorators` is `true`.
+- Dev mode warns when `performUpdate()` is overridden with an `async` function.
+
+### Lit 3.1 additions
+
+- Accessing a cached `@query` field before the first update no longer permanently caches `null`. A dev-mode warning is issued instead.
+- Two new types exported: `UncompiledTemplateResult` and `MaybeCompiledTemplateResult`.
+
+### Lit 3.2 additions
+
+- MathML support via the `mathml` template tag.
+
+### Lit 3.3 additions
+
+- New `useDefault` property option: when set, the initial default value is not considered a change and does not reflect. When the attribute is removed, the default value is restored.
+- `ClassInfo` type is now mutable.
+
+---
+
+## Lit 2.x (lit@2, lit-element@3, lit-html@2)
+
+Lit 2 introduced the unified `lit` package and renamed several APIs from Lit 1. If you are upgrading from `lit-element@2.x` or `lit-html@1.x`, start here.
+
+### Upgrading packages and import paths
+
+The recommended entry point changed from `lit-element` to `lit`:
+
+```typescript
+// lit-element 2.x / Lit 1
+import {LitElement, html, css} from 'lit-element';
+import {property} from 'lit-element';
+
+// Lit 2 / Lit 3
+import {LitElement, html, css} from 'lit';
+import {property} from 'lit/decorators.js';
+```
+
+Update your `package.json`:
+
+```bash
+npm install lit
+npm uninstall lit-element lit-html
+```
+
+### @internalProperty renamed to @state
+
+```typescript
+// lit-element 2.x
+@internalProperty()
+private _open = false;
+
+// Lit 2+
+import {state} from 'lit/decorators.js';
+
+@state()
+private _open = false;
+```
+
+### Decorators moved out of lit-element
+
+Decorators are no longer exported from the `lit-element` module. Import them from `lit/decorators.js` or individual files:
+
+```typescript
+import {customElement, property, state, query} from 'lit/decorators.js';
+// or individually:
+import {customElement} from 'lit/decorators/custom-element.js';
+import {property} from 'lit/decorators/property.js';
+```
+
+### UpdatingElement renamed to ReactiveElement
+
+`UpdatingElement` from the `lit-element` package has been moved to `@lit/reactive-element` and renamed to `ReactiveElement`. If you subclassed `UpdatingElement` directly, update the import:
+
+```typescript
+// lit-element 2.x
+import {UpdatingElement} from 'lit-element';
+
+// Lit 2+
+import {ReactiveElement} from '@lit/reactive-element';
+// or
+import {ReactiveElement} from 'lit';
+```
+
+### _getUpdateComplete renamed to getUpdateComplete
+
+```typescript
+// lit-element 2.x
+protected _getUpdateComplete() {
+  return super._getUpdateComplete();
+}
+
+// Lit 2+
+protected override getUpdateComplete() {
+  return super.getUpdateComplete();
+}
+```
+
+### requestUpdate no longer returns a Promise
+
+`requestUpdate()` previously returned a `Promise`. In Lit 2, it returns `void`. Await `this.updateComplete` instead:
+
+```typescript
+// lit-element 2.x
+await this.requestUpdate();
+
+// Lit 2+
+this.requestUpdate();
+await this.updateComplete;
+```
+
+### requestUpdateInternal removed
+
+`requestUpdateInternal` has been removed. Use `requestUpdate` directly.
+
+### LitElement.adoptStyles removed
+
+`LitElement.adoptStyles()` has been removed. Styling is now adopted in `createRenderRoot()`. If you overrode `adoptStyles` to customize style adoption, override `createRenderRoot()` instead.
+
+### LitElement.getStyles renamed to finalizeStyles
+
+```typescript
+// lit-element 2.x
+static getStyles() {
+  return [...super.getStyles(), myStyles];
+}
+
+// Lit 2+
+static finalizeStyles(styles) {
+  return super.finalizeStyles([...styles, myStyles]);
+}
+```
+
+### static render removed
+
+The static `render` method on `LitElement` has been removed.
+
+### createRenderRoot called before first update
+
+In Lit 2, `createRenderRoot()` is called just before the first update rather than in the constructor. Do not assume `this.renderRoot` exists before `hasUpdated` is `true`.
+
+### ReactiveElement.initialize removed
+
+The `initialize` method has been removed. The work it performed is now done in the element constructor.
+
+---
+
+## lit-html 2.x breaking changes
+
+### templateFactory option removed
+
+The `templateFactory` option of `RenderOptions` has been removed.
+
+### TemplateProcessor removed
+
+`TemplateProcessor` has been removed.
+
+### NodePart renamed to ChildPart
+
+`NodePart` has been renamed to `ChildPart`. Associated names like `PartType.Node` have been renamed to `PartType.CHILD`.
+
+### Part constructors no longer exported
+
+Part constructors (`ChildPart`, `AttributePart`, etc.) are now interface-only exports. Use helpers from `lit-html/directive-helpers.js` to construct parts in custom directives.
+
+### render() appends instead of replacing
+
+`render()` no longer clears the container before rendering. It now appends to the container by default.
+
+### Expressions in comments no longer rendered
+
+Expressions inside HTML comments (`` <!-- ${value} --> ``) are no longer rendered or updated.
+
+### Arrays in attribute bindings
+
+Arrays passed to attribute bindings are no longer handled specially. They render using their default `.toString()` representation:
+
+```typescript
+// lit-html 1.x — rendered as "a b"
+html`<div class=${['a', 'b']}></div>`;
+
+// lit-html 2.x — renders as "a,b"
+html`<div class=${['a', 'b']}></div>`;
+
+// To get the old behavior:
+html`<div class=${['a', 'b'].join(' ')}></div>`;
+```
+
+### Directive and part APIs changed
+
+The directive and part APIs are significantly different in lit-html 2. The `Directive` base class and `directive()` factory function are now exported from `lit-html/directive.js`. See the [Upgrade Guide](https://lit.dev/docs/releases/upgrade/) for full details on updating custom directive implementations.
+
+### eventContext renamed to host
+
+The `eventContext` render option has been renamed to `host`.
+
+### Symbols in bindings throw
+
+Symbols are no longer silently converted to strings in bindings. Passing a Symbol to a text or attribute binding now throws an exception.
+
+---
+
+## Upgrade checklist
+
+<Steps>
+  <Step title="Update packages">
+    ```bash
+    npm install lit@latest
+    ```
+    Remove separate `lit-html` and `lit-element` dependencies if present.
+  </Step>
+
+  <Step title="Update import paths">
+    Replace `from 'lit-element'` with `from 'lit'`. Move decorator imports to `from 'lit/decorators.js'`.
+  </Step>
+
+  <Step title="Rename @internalProperty to @state">
+    Search for `@internalProperty` and replace with `@state`.
+  </Step>
+
+  <Step title="Update @queryAssignedNodes usage">
+    Replace any `@queryAssignedNodes` calls with selector arguments with `@queryAssignedElements`.
+  </Step>
+
+  <Step title="Update hydration imports (Lit 3 only)">
+    Replace `lit-element/experimental-hydrate-support.js` with `@lit-labs/ssr-client/lit-element-hydrate-support.js`.
+  </Step>
+
+  <Step title="Run TypeScript">
+    Fix any type errors surfaced by the updated type definitions, particularly around `renderRoot`, `updateComplete`, and removed APIs.
+  </Step>
+
+  <Step title="Run your tests">
+    Use `wtr` or your preferred test runner to verify behavior across Chromium, Firefox, and WebKit.
+  </Step>
+</Steps>

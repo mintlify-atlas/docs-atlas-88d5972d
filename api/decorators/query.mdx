@@ -1,0 +1,281 @@
+---
+title: 'Query decorators'
+description: 'Decorators for querying elements in the render root or slot assignments: @query, @queryAll, @queryAsync, @queryAssignedElements, @queryAssignedNodes.'
+---
+
+Lit provides several decorators for declaratively accessing DOM elements inside a component's render root or slot.
+
+## @query
+
+Converts a class property into a getter that runs `querySelector` on the element's `renderRoot`.
+
+### Import
+
+```typescript
+import {query} from 'lit/decorators.js';
+```
+
+### Signature
+
+```typescript
+query(selector: string, cache?: boolean): QueryDecorator
+```
+
+<ParamField path="selector" type="string" required>
+  A CSS selector string passed to `renderRoot.querySelector()`.
+</ParamField>
+
+<ParamField path="cache" type="boolean" default="false">
+  When `true`, the query result is cached after the first non-null lookup.
+  Subsequent reads return the cached value without querying the DOM again.
+  Only use this when you know the queried element will not change after
+  initial render.
+</ParamField>
+
+### Return type
+
+`Element | null`
+
+### Example
+
+```typescript
+import {LitElement, html} from 'lit';
+import {query} from 'lit/decorators.js';
+
+class MyElement extends LitElement {
+  @query('#input')
+  inputEl!: HTMLInputElement;
+
+  render() {
+    return html`<input id="input" type="text" />`;
+  }
+
+  focus() {
+    this.inputEl?.focus();
+  }
+}
+```
+
+---
+
+## @queryAll
+
+Converts a class property into a getter that runs `querySelectorAll` on the element's `renderRoot`.
+
+### Import
+
+```typescript
+import {queryAll} from 'lit/decorators.js';
+```
+
+### Signature
+
+```typescript
+queryAll(selector: string): QueryAllDecorator
+```
+
+<ParamField path="selector" type="string" required>
+  A CSS selector string passed to `renderRoot.querySelectorAll()`.
+</ParamField>
+
+### Return type
+
+`NodeListOf<Element>`
+
+### Example
+
+```typescript
+import {LitElement, html} from 'lit';
+import {queryAll} from 'lit/decorators.js';
+
+class MyList extends LitElement {
+  @queryAll('li')
+  listItems!: NodeListOf<HTMLLIElement>;
+
+  render() {
+    return html`
+      <ul>
+        <li>First</li>
+        <li>Second</li>
+        <li>Third</li>
+      </ul>
+    `;
+  }
+
+  logItems() {
+    this.listItems.forEach((li) => console.log(li.textContent));
+  }
+}
+```
+
+---
+
+## @queryAsync
+
+Converts a class property into a getter that returns a `Promise` resolving to the result of `querySelector`
+after the element's next update completes.
+
+Useful when the queried element's presence depends on reactive state that may not have been rendered yet.
+
+### Import
+
+```typescript
+import {queryAsync} from 'lit/decorators.js';
+```
+
+### Signature
+
+```typescript
+queryAsync(selector: string): QueryAsyncDecorator
+```
+
+<ParamField path="selector" type="string" required>
+  A CSS selector string passed to `renderRoot.querySelector()`, evaluated after
+  `updateComplete` resolves.
+</ParamField>
+
+### Return type
+
+`Promise<Element | null>`
+
+### Example
+
+```typescript
+import {LitElement, html} from 'lit';
+import {state, queryAsync} from 'lit/decorators.js';
+
+class MyElement extends LitElement {
+  @state() private _showInput = false;
+
+  @queryAsync('#input')
+  inputEl!: Promise<HTMLInputElement | null>;
+
+  render() {
+    return html`
+      <button @click=${() => (this._showInput = true)}>Show input</button>
+      ${this._showInput ? html`<input id="input" />` : ''}
+    `;
+  }
+
+  async focusInput() {
+    const input = await this.inputEl;
+    input?.focus();
+  }
+}
+```
+
+---
+
+## @queryAssignedElements
+
+Converts a class property into a getter that returns the elements assigned to a slot
+using [`HTMLSlotElement.assignedElements()`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLSlotElement/assignedElements).
+
+### Import
+
+```typescript
+import {queryAssignedElements} from 'lit/decorators.js';
+```
+
+### Signature
+
+```typescript
+queryAssignedElements(options?: QueryAssignedElementsOptions): QueryAssignedElementsDecorator
+```
+
+### Options
+
+<ParamField path="slot" type="string">
+  Name of the slot to query. Omit to query the default (unnamed) slot.
+</ParamField>
+
+<ParamField path="flatten" type="boolean" default="false">
+  When `true`, recursively returns elements from nested slots.
+  Passed directly to `HTMLSlotElement.assignedElements({flatten})`.
+</ParamField>
+
+<ParamField path="selector" type="string">
+  A CSS selector to filter the assigned elements. Only elements matching
+  this selector are included in the result.
+</ParamField>
+
+### Return type
+
+`Array<Element>`
+
+### Example
+
+```typescript
+import {LitElement, html} from 'lit';
+import {queryAssignedElements} from 'lit/decorators.js';
+
+class MyTabs extends LitElement {
+  @queryAssignedElements({slot: 'tab'})
+  tabs!: Array<HTMLElement>;
+
+  @queryAssignedElements()
+  panels!: Array<HTMLElement>;
+
+  render() {
+    return html`
+      <slot name="tab"></slot>
+      <slot></slot>
+    `;
+  }
+
+  updated() {
+    console.log('Tab count:', this.tabs.length);
+  }
+}
+```
+
+---
+
+## @queryAssignedNodes
+
+Converts a class property into a getter that returns the nodes assigned to a slot
+using [`HTMLSlotElement.assignedNodes()`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLSlotElement/assignedNodes).
+Includes text nodes; use `@queryAssignedElements` if you only need element nodes.
+
+### Import
+
+```typescript
+import {queryAssignedNodes} from 'lit/decorators.js';
+```
+
+### Signature
+
+```typescript
+queryAssignedNodes(options?: QueryAssignedNodesOptions): QueryAssignedNodesDecorator
+```
+
+### Options
+
+<ParamField path="slot" type="string">
+  Name of the slot to query. Omit to query the default (unnamed) slot.
+</ParamField>
+
+<ParamField path="flatten" type="boolean" default="false">
+  When `true`, recursively returns nodes from nested slots.
+  Passed directly to `HTMLSlotElement.assignedNodes({flatten})`.
+</ParamField>
+
+### Return type
+
+`Array<Node>`
+
+### Example
+
+```typescript
+import {LitElement, html} from 'lit';
+import {queryAssignedNodes} from 'lit/decorators.js';
+
+class MyElement extends LitElement {
+  @queryAssignedNodes({slot: 'list', flatten: true})
+  listNodes!: Array<Node>;
+
+  render() {
+    return html`<slot name="list"></slot>`;
+  }
+}
+```

@@ -1,0 +1,247 @@
+---
+title: Publishing
+description: How to package and publish Lit web components as npm packages, including exports, TypeScript declarations, bundling, and peer dependencies.
+---
+
+Lit components are standard ESM modules and custom elements. Publishing them correctly lets consumers use your components with any build tool or directly in the browser.
+
+## Package structure
+
+The `lit-starter-ts` template uses the following layout:
+
+```
+my-element/
+├── src/
+│   ├── my-element.ts       # TypeScript source
+│   └── test/
+│       └── my-element_test.ts
+├── my-element.js           # Compiled output (outDir: './')
+├── my-element.d.ts
+├── my-element.d.ts.map
+├── my-element.js.map
+├── package.json
+├── tsconfig.json
+└── custom-elements.json    # Custom Elements Manifest
+```
+
+TypeScript is compiled with `outDir: "./"` and `rootDir: "./src"`, so `src/my-element.ts` compiles to `my-element.js` at the package root. This keeps import paths simple: consumers write `import 'my-package/my-element.js'`.
+
+## package.json
+
+A minimal `package.json` for a published Lit component:
+
+```json package.json
+{
+  "name": "my-element",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "my-element.js",
+  "module": "my-element.js",
+  "exports": {
+    ".": {
+      "types": "./my-element.d.ts",
+      "default": "./my-element.js"
+    }
+  },
+  "files": [
+    "my-element.js",
+    "my-element.js.map",
+    "my-element.d.ts",
+    "my-element.d.ts.map"
+  ],
+  "peerDependencies": {
+    "lit": "^3.0.0"
+  },
+  "customElements": "custom-elements.json"
+}
+```
+
+### Key fields
+
+**`type: "module"`** — Declares all `.js` files in the package as ESM. Required for native browser imports.
+
+**`exports`** — Restricts which files consumers can import and maps entry points to their TypeScript types. Prefer this over `main` for new packages.
+
+**`files`** — Allowlist of files to include in the published package. Do not publish `src/` or test files.
+
+**`customElements`** — Points to the [Custom Elements Manifest](https://custom-elements-manifest.open-wc.org/) file, used by editors and documentation tools.
+
+## Do not bundle lit — use peerDependencies
+
+Do **not** include `lit` in your bundle or in `dependencies`. If you bundle Lit, consumers who also use Lit will ship two copies of the library, which breaks the custom element registry and wastes bytes.
+
+Instead, declare `lit` as a `peerDependency`:
+
+```json package.json
+{
+  "peerDependencies": {
+    "lit": "^2.0.0 || ^3.0.0"
+  }
+}
+```
+
+<Warning>
+Never bundle `lit` or `@lit/reactive-element` into your published package. Mark them as peer dependencies and let the consumer's build tool deduplicate them.
+</Warning>
+
+When you do need to bundle for a standalone demo or documentation site, use a Rollup config that explicitly resolves `lit` but excludes it from the library output.
+
+## TypeScript declaration files
+
+Enable `declaration` and `declarationMap` in your `tsconfig.json`:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "inlineSources": true
+  }
+}
+```
+
+This produces:
+- `my-element.d.ts` — type declarations consumed by TypeScript users of your package
+- `my-element.d.ts.map` — maps declarations back to the original `.ts` source
+- `my-element.js.map` — maps the compiled JS back to the original source
+
+Include all `.d.ts` and `.d.ts.map` files in the `files` list in `package.json`.
+
+## Bundling for demos with Rollup
+
+For generating a standalone bundled demo (e.g. for a documentation site), the `lit-starter-ts` uses the following Rollup config:
+
+```javascript rollup.config.js
+import summary from 'rollup-plugin-summary';
+import terser from '@rollup/plugin-terser';
+import resolve from '@rollup/plugin-node-resolve';
+import replace from '@rollup/plugin-replace';
+
+export default {
+  input: 'my-element.js',
+  output: {
+    file: 'my-element.bundled.js',
+    format: 'esm',
+  },
+  onwarn(warning) {
+    if (warning.code !== 'THIS_IS_UNDEFINED') {
+      console.error(`(!) ${warning.message}`);
+    }
+  },
+  plugins: [
+    replace({preventAssignment: false, 'Reflect.decorate': 'undefined'}),
+    resolve(),
+    terser({
+      ecma: 2021,
+      module: true,
+      warnings: true,
+      mangle: {
+        properties: {
+          regex: /^__/,
+        },
+      },
+    }),
+    summary(),
+  ],
+};
+```
+
+<Note>
+This config is for bundling a **demo** — it includes `lit` in the output via `resolve()`. For your **library** output, do not call `resolve()` on `lit` so that the peer dependency remains external.
+</Note>
+
+To keep `lit` external in a library bundle:
+
+```javascript rollup.config.js
+export default {
+  input: 'my-element.js',
+  output: {
+    file: 'my-element.bundled.js',
+    format: 'esm',
+  },
+  external: ['lit', 'lit/decorators.js', '@lit/reactive-element'],
+};
+```
+
+## Custom Elements Manifest
+
+The `custom-elements-manifest` analyzer generates a JSON manifest describing your component's API. This is read by tools like IDEs, documentation generators, and Storybook.
+
+Install and configure the analyzer:
+
+```bash
+npm install --save-dev @custom-elements-manifest/analyzer
+```
+
+Add a script to `package.json`:
+
+```json package.json
+{
+  "scripts": {
+    "analyze": "cem analyze --litelement --globs \"src/**/*.ts\""
+  },
+  "customElements": "custom-elements.json"
+}
+```
+
+Run the analyzer as part of your build:
+
+```bash
+npm run analyze
+```
+
+## Using lit-starter-ts as a template
+
+The fastest way to start a publishable component is to clone `lit-starter-ts`:
+
+```bash
+npx degit lit/lit/packages/lit-starter-ts my-element
+cd my-element
+npm install
+```
+
+The starter provides:
+
+<CardGroup cols={2}>
+  <Card title="TypeScript build" icon="code">
+    Pre-configured `tsconfig.json` and `tsc` build step with declaration file output.
+  </Card>
+  <Card title="Web Test Runner" icon="flask-conical">
+    Full test setup with Playwright launchers for Chromium, Firefox, and WebKit.
+  </Card>
+  <Card title="Rollup bundling" icon="package">
+    Rollup config for bundled demo output with terser minification.
+  </Card>
+  <Card title="Custom Elements Manifest" icon="file-json">
+    Analyzer script for generating `custom-elements.json` for tooling.
+  </Card>
+</CardGroup>
+
+## Versioning and changelogs
+
+For monorepos or packages with multiple components, consider [Changesets](https://github.com/changesets/changesets) for versioning and changelog management. Lit itself uses Changesets.
+
+<Steps>
+  <Step title="Install changesets">
+    ```bash
+    npm install --save-dev @changesets/cli
+    npx changeset init
+    ```
+  </Step>
+
+  <Step title="Add a changeset for each change">
+    ```bash
+    npx changeset
+    ```
+
+    This prompts you to describe the change and select a semver bump type (patch, minor, major).
+  </Step>
+
+  <Step title="Version and publish">
+    ```bash
+    npx changeset version  # bumps versions and updates CHANGELOG.md
+    npm publish            # publishes the package
+    ```
+  </Step>
+</Steps>

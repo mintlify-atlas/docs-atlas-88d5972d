@@ -1,0 +1,256 @@
+---
+title: Conditionals
+description: Render different content based on conditions in Lit templates using ternaries, when(), choose(), ifDefined(), and cache().
+---
+
+Because Lit templates use plain JavaScript expressions, all standard JavaScript control flow is available. This page covers the most common patterns for conditional rendering.
+
+## Ternary operator
+
+The inline ternary expression is the most concise way to choose between two templates.
+
+```typescript
+html`
+  <p>
+    ${this.isLoggedIn
+      ? html`Welcome, ${this.username}!`
+      : html`<a href="/login">Sign in</a>`
+    }
+  </p>
+`
+```
+
+For a single-branch conditional with no else, return `nothing` to render nothing at all:
+
+```typescript
+import {html, nothing} from 'lit';
+
+html`
+  <div class="card">
+    ${this.isAdmin ? html`<button>Delete</button>` : nothing}
+  </div>
+`
+```
+
+## If / else in the render method
+
+For more complex conditions, compute the template in a separate variable or helper before passing it to `html`.
+
+```typescript
+render() {
+  let content;
+  if (this.state === 'loading') {
+    content = html`<span>Loading...</span>`;
+  } else if (this.state === 'error') {
+    content = html`<p class="error">${this.errorMessage}</p>`;
+  } else {
+    content = html`<p>${this.data}</p>`;
+  }
+  return html`<div class="container">${content}</div>`;
+}
+```
+
+## `when()` directive
+
+The `when()` helper is a convenience wrapper around a ternary that makes single-branch conditionals easier to read.
+
+**Import:** `lit/directives/when.js`
+
+**Signature:**
+```typescript
+function when<C, T, F = undefined>(
+  condition: C,
+  trueCase: (c: C) => T,
+  falseCase?: (c: C) => F
+): C extends Falsy ? F : T
+```
+
+When `condition` is truthy, `when()` calls `trueCase(condition)` and returns the result. When falsy, it calls `falseCase(condition)` if provided, otherwise returns `undefined`.
+
+```typescript
+import {html} from 'lit';
+import {when} from 'lit/directives/when.js';
+
+render() {
+  return html`
+    ${when(
+      this.user,
+      (user) => html`<p>Welcome, ${user.name}!</p>`,
+      () => html`<a href="/login">Sign in</a>`
+    )}
+  `;
+}
+```
+
+Single-branch example (no `falseCase`):
+
+```typescript
+html`
+  ${when(this.hasError, () => html`<p class="error">${this.errorMessage}</p>`)}
+`
+```
+
+<Tip>
+  The condition value is passed to `trueCase` and `falseCase`, so TypeScript can
+  narrow its type inside each callback. This is especially useful when
+  `condition` is an object that may be `undefined`.
+</Tip>
+
+## `choose()` directive
+
+The `choose()` helper selects a template from a list of cases by matching a value with strict equality (`===`). It behaves like a switch statement without fallthrough.
+
+**Import:** `lit/directives/choose.js`
+
+**Signature:**
+```typescript
+const choose = <T, V, K extends T = T>(
+  value: T,
+  cases: Array<[K, () => V]>,
+  defaultCase?: () => V
+) => V | undefined
+```
+
+```typescript
+import {html} from 'lit';
+import {choose} from 'lit/directives/choose.js';
+
+render() {
+  return html`
+    ${choose(
+      this.section,
+      [
+        ['home',  () => html`<h1>Home</h1>`],
+        ['about', () => html`<h1>About</h1>`],
+        ['blog',  () => html`<h1>Blog</h1>`],
+      ],
+      () => html`<h1>404 — Not found</h1>`
+    )}
+  `;
+}
+```
+
+Case values can be any type — primitives, objects, or symbols.
+
+```typescript
+// Enum-style
+const Status = {IDLE: 0, LOADING: 1, DONE: 2, ERROR: 3} as const;
+
+html`
+  ${choose(this.status, [
+    [Status.IDLE,    () => html`<span>Idle</span>`],
+    [Status.LOADING, () => html`<span>Loading...</span>`],
+    [Status.DONE,    () => html`<span>Done</span>`],
+    [Status.ERROR,   () => html`<span class="error">Error</span>`],
+  ])}
+`
+```
+
+## `ifDefined()` directive
+
+`ifDefined()` is used in **attribute bindings** to set the attribute when the value is defined and remove the attribute when the value is `undefined`.
+
+**Import:** `lit/directives/if-defined.js`
+
+**Signature:**
+```typescript
+const ifDefined = <T>(value: T) => T | typeof nothing
+```
+
+```typescript
+import {html} from 'lit';
+import {ifDefined} from 'lit/directives/if-defined.js';
+
+// href attribute is only added when url is not undefined
+html`<a href="${ifDefined(this.url)}">Link</a>`
+```
+
+```typescript
+// ariaLabel is removed when label is undefined
+html`<button aria-label="${ifDefined(this.ariaLabel)}">Click</button>`
+```
+
+<Note>
+  `ifDefined()` only removes the attribute for `undefined`. For `null` values,
+  the attribute remains (set to the string `"null"`). If you want to remove the
+  attribute for both `null` and `undefined`, use
+  `ifDefined(value ?? undefined)` or simply use `nothing` directly in the
+  attribute binding.
+</Note>
+
+## Using `nothing` to render nothing
+
+`nothing` is the idiomatic value to use when you want a conditional expression that renders no DOM content.
+
+```typescript
+import {html, nothing} from 'lit';
+
+render() {
+  return html`
+    <header>
+      ${this.title ? html`<h1>${this.title}</h1>` : nothing}
+    </header>
+  `;
+}
+```
+
+Using `nothing` in an attribute removes the attribute entirely:
+
+```typescript
+html`<div class="${this.isActive ? 'active' : nothing}"></div>`
+// When isActive is false, the class attribute is removed
+```
+
+## `cache()` directive
+
+By default, switching between two different templates causes Lit to tear down the old DOM and create new DOM. `cache()` avoids this by keeping the DOM for each template alive in a hidden fragment, then swapping it back in when the template is rendered again.
+
+**Import:** `lit/directives/cache.js`
+
+**Signature:**
+```typescript
+export const cache: (v: unknown) => DirectiveResult
+```
+
+```typescript
+import {html} from 'lit';
+import {cache} from 'lit/directives/cache.js';
+
+render() {
+  return html`
+    ${cache(
+      this.isChecked
+        ? html`<p>Input is checked</p>`
+        : html`<p>Input is not checked</p>`
+    )}
+  `;
+}
+```
+
+`cache()` is most useful when:
+
+- Switching between two expensive-to-create subtrees.
+- A subtree holds internal state (scroll position, input text, focus) that you want to preserve across switches.
+
+<Note>
+  `cache()` increases memory usage because it keeps inactive DOM alive. Only
+  use it when the performance gain from skipping DOM creation outweighs the
+  extra memory cost.
+</Note>
+
+## Choosing the right approach
+
+<CardGroup cols={2}>
+  <Card title="Ternary / nothing" icon="code">
+    Best for simple two-branch or single-branch inline conditionals. No import required.
+  </Card>
+  <Card title="when()" icon="toggle-on">
+    Cleaner alternative to a ternary when condition narrowing in TypeScript matters, or when there is no else branch.
+  </Card>
+  <Card title="choose()" icon="list">
+    Switch-like dispatch over an enumerated value. Avoids deeply nested ternaries.
+  </Card>
+  <Card title="cache()" icon="database">
+    Preserves DOM across template switches. Use when subtrees are expensive to create or hold internal state.
+  </Card>
+</CardGroup>

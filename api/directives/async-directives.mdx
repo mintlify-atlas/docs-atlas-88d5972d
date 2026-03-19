@@ -1,0 +1,298 @@
+---
+title: Async directives
+description: Directives for rendering values from Promises and async iterables — until, asyncAppend, and asyncReplace — plus the AsyncDirective base class.
+---
+
+Lit provides three built-in directives for working with asynchronous data, and an `AsyncDirective` base class for building your own.
+
+---
+
+## until
+
+Renders one of a series of values — including Promises — in priority order. Lower-priority values are rendered as placeholders until higher-priority Promises resolve.
+
+### Import
+
+```typescript
+import { until } from 'lit/directives/until.js';
+```
+
+### Signature
+
+```typescript
+until(...values: unknown[]): DirectiveResult
+```
+
+### Parameters
+
+<ParamField path="...values" type="unknown[]" required>
+  One or more values or Promises. Values are rendered in priority order: the first argument has the highest priority. If a value is a Promise, the next lower-priority argument is rendered until the Promise resolves. Non-Promise values are rendered immediately and prevent lower-priority values from being rendered at all.
+</ParamField>
+
+### Return type
+
+`DirectiveResult` — an opaque value consumed by lit-html's template engine.
+
+### How priority works
+
+- Arguments are indexed from `0` (highest priority) to `n-1` (lowest priority).
+- The first non-Promise argument encountered wins and is rendered immediately — no lower-priority values will be shown.
+- When a Promise resolves, its value replaces the current content only if it has higher priority than what is already displayed.
+
+### Example: loading placeholder
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { until } from 'lit/directives/until.js';
+
+@customElement('user-profile')
+class UserProfile extends LitElement {
+  private _data = fetch('/api/user').then((r) => r.json());
+
+  render() {
+    return html`
+      <section>
+        ${until(
+          this._data.then(
+            (user) => html`<p>Welcome, ${user.name}!</p>`
+          ),
+          html`<p>Loading...</p>`
+        )}
+      </section>
+    `;
+  }
+}
+```
+
+`Loading...` is shown immediately. Once `_data` resolves, it is replaced with the user's name.
+
+---
+
+## asyncAppend
+
+Renders values from an `AsyncIterable`, **appending** each new value after the previous ones. Usable only in child (text) expressions.
+
+### Import
+
+```typescript
+import { asyncAppend } from 'lit/directives/async-append.js';
+```
+
+### Signature
+
+```typescript
+asyncAppend<T>(
+  value: AsyncIterable<T>,
+  mapper?: (value: T, index?: number) => unknown
+): DirectiveResult
+```
+
+### Parameters
+
+<ParamField path="value" type="AsyncIterable<T>" required>
+  An async iterable (any object with a `[Symbol.asyncIterator]` method). Each value yielded by the iterable is appended to the DOM after all previously appended values.
+</ParamField>
+
+<ParamField path="mapper" type="(value: T, index?: number) => unknown">
+  An optional mapping function applied to each yielded value before rendering. Useful for producing a `TemplateResult` per item. Receives the value and its zero-based index.
+</ParamField>
+
+### Return type
+
+`DirectiveResult` — an opaque value consumed by lit-html's template engine.
+
+### Example: streaming log entries
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import { asyncAppend } from 'lit/directives/async-append.js';
+
+async function* streamLogs(): AsyncIterable<string> {
+  const sources = ['Connected', 'Handshake complete', 'Ready'];
+  for (const message of sources) {
+    await new Promise((r) => setTimeout(r, 500));
+    yield message;
+  }
+}
+
+@customElement('log-viewer')
+class LogViewer extends LitElement {
+  private _logs = streamLogs();
+
+  render() {
+    return html`
+      <ul>
+        ${asyncAppend(
+          this._logs,
+          (entry) => html`<li>${entry}</li>`
+        )}
+      </ul>
+    `;
+  }
+}
+```
+
+Each yielded string is appended as a new `<li>` without removing previous entries.
+
+---
+
+## asyncReplace
+
+Renders values from an `AsyncIterable`, **replacing** the previous value with each new one. Only the most recent value is visible at any time.
+
+### Import
+
+```typescript
+import { asyncReplace } from 'lit/directives/async-replace.js';
+```
+
+### Signature
+
+```typescript
+asyncReplace<T>(
+  value: AsyncIterable<T>,
+  mapper?: (value: T, index?: number) => unknown
+): DirectiveResult
+```
+
+### Parameters
+
+<ParamField path="value" type="AsyncIterable<T>" required>
+  An async iterable whose values are rendered one at a time. Each new value replaces the previous rendered content.
+</ParamField>
+
+<ParamField path="mapper" type="(value: T, index?: number) => unknown">
+  An optional mapping function applied to each yielded value before rendering. Receives the value and its zero-based index.
+</ParamField>
+
+### Return type
+
+`DirectiveResult` — an opaque value consumed by lit-html's template engine.
+
+### Example: live clock
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { asyncReplace } from 'lit/directives/async-replace.js';
+
+async function* clock(): AsyncIterable<string> {
+  while (true) {
+    yield new Date().toLocaleTimeString();
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+@customElement('live-clock')
+class LiveClock extends LitElement {
+  render() {
+    return html`<p>Time: ${asyncReplace(clock())}</p>`;
+  }
+}
+```
+
+Every second the time string is replaced; only the current time is visible.
+
+### asyncAppend vs asyncReplace
+
+| | `asyncAppend` | `asyncReplace` |
+|---|---|---|
+| Behavior | Accumulates all yielded values | Shows only the latest value |
+| Use case | Chat messages, log streams, infinite scroll | Live counters, status updates, tickers |
+| DOM growth | Grows with each new value | Stays constant |
+
+---
+
+## AsyncDirective base class
+
+`AsyncDirective` is the base class for directives that need to perform asynchronous work, hold subscriptions, or react to the element being connected or disconnected from the DOM. `until`, `asyncAppend`, and `asyncReplace` all extend it.
+
+### Import
+
+```typescript
+import { AsyncDirective } from 'lit/async-directive.js';
+import { directive } from 'lit/directive.js';
+```
+
+### Properties
+
+<ParamField path="isConnected" type="boolean">
+  Read-only flag indicating whether the part this directive is bound to is currently connected to the DOM. Check this flag inside `render` or `update` before subscribing to resources that could prevent garbage collection.
+</ParamField>
+
+### Methods
+
+#### `setValue(value: unknown): void`
+
+Updates the directive's part value outside of the normal `render`/`update` lifecycle. Call this from asynchronous callbacks (e.g., Promise `.then()`, event handlers, timers) to push a new value into the DOM.
+
+<Warning>
+  Do not call `setValue` synchronously from within `render` or `update`. It is intended for use in async callbacks only.
+</Warning>
+
+#### `disconnected(): void` (protected)
+
+Called when the part containing this directive is cleared or when the host element is disconnected from the DOM. Override this method to cancel subscriptions, clear timers, or release other resources.
+
+#### `reconnected(): void` (protected)
+
+Called when a previously disconnected part is reconnected to the DOM. Override this alongside `disconnected` to restore subscriptions or restart work.
+
+### Example: custom async directive
+
+```typescript
+import { html, LitElement } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { AsyncDirective } from 'lit/async-directive.js';
+import { directive, PartInfo } from 'lit/directive.js';
+
+class PollingDirective extends AsyncDirective {
+  private _intervalId?: ReturnType<typeof setInterval>;
+  private _url!: string;
+
+  constructor(partInfo: PartInfo) {
+    super(partInfo);
+  }
+
+  render(url: string) {
+    this._url = url;
+    return 'Loading...';
+  }
+
+  override update(part: unknown, [url]: [string]) {
+    this._url = url;
+    if (!this._intervalId) {
+      this._startPolling();
+    }
+    return super.update(part, [url]);
+  }
+
+  private _startPolling() {
+    this._intervalId = setInterval(async () => {
+      if (!this.isConnected) return;
+      const data = await fetch(this._url).then((r) => r.text());
+      this.setValue(data);
+    }, 5000);
+  }
+
+  override disconnected() {
+    clearInterval(this._intervalId);
+    this._intervalId = undefined;
+  }
+
+  override reconnected() {
+    this._startPolling();
+  }
+}
+
+const polling = directive(PollingDirective);
+
+@customElement('live-data')
+class LiveData extends LitElement {
+  render() {
+    return html`<p>${polling('/api/status')}</p>`;
+  }
+}
+```

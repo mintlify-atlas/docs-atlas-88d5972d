@@ -1,0 +1,70 @@
+---
+title: '@customElement'
+description: 'Class decorator that defines a custom element and registers it with the browser.'
+---
+
+The `@customElement` decorator registers your `LitElement` class as a custom element by calling `customElements.define()` under the hood.
+
+## Import
+
+```typescript
+import {customElement} from 'lit/decorators.js';
+```
+
+## Signature
+
+```typescript
+customElement(tagName: string): CustomElementDecorator
+```
+
+<ParamField path="tagName" type="string" required>
+  The tag name to register the element under. Must contain a hyphen and follow the
+  [valid custom element name](https://developer.mozilla.org/en-US/docs/Web/API/CustomElementRegistry/define#valid_custom_element_names)
+  rules.
+</ParamField>
+
+## Usage
+
+```typescript
+import {LitElement, html} from 'lit';
+import {customElement} from 'lit/decorators.js';
+
+@customElement('my-element')
+class MyElement extends LitElement {
+  render() {
+    return html`<p>Hello from my-element</p>`;
+  }
+}
+```
+
+Once registered, you can use the element in HTML:
+
+```html
+<my-element></my-element>
+```
+
+## Without decorators
+
+If you prefer not to use decorators, call `customElements.define()` directly after your class definition:
+
+```typescript
+import {LitElement, html} from 'lit';
+
+class MyElement extends LitElement {
+  render() {
+    return html`<p>Hello from my-element</p>`;
+  }
+}
+
+customElements.define('my-element', MyElement);
+```
+
+## Notes
+
+<Note>
+  You must register a custom element before using it in the DOM. If you use
+  `@customElement`, registration happens automatically when the module is
+  imported. Make sure to import the module before referencing the tag in HTML.
+</Note>
+
+Each tag name can only be registered once. Attempting to register the same tag name twice throws a `DOMException`.

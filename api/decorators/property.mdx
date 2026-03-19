@@ -1,0 +1,178 @@
+---
+title: '@property'
+description: 'Decorator that declares a public reactive property, optionally backed by an observed HTML attribute.'
+---
+
+The `@property` decorator creates a public reactive property on a `LitElement` class.
+When the property changes, the element schedules an update and re-renders.
+Public properties are observable from outside the element and can be set via HTML attributes or JavaScript.
+
+## Import
+
+```typescript
+import {property} from 'lit/decorators.js';
+```
+
+## Signature
+
+```typescript
+property(options?: PropertyDeclaration): PropertyDecorator
+```
+
+## Options
+
+<ParamField path="attribute" type="boolean | string" default="true">
+  Controls whether and how the property maps to an HTML attribute.
+  - `true` (default): the lowercased property name is used as the attribute name (e.g. `fooBar` → `foobar`).
+  - A string: uses that string as the attribute name (e.g. `attribute: 'foo-bar'`).
+  - `false`: the property is not associated with any attribute.
+</ParamField>
+
+<ParamField path="type" type="Boolean | Number | String | Object | Array" default="String">
+  A type hint used by the default converter to parse the attribute string into a
+  property value. Has no effect when a custom `converter` is provided.
+</ParamField>
+
+<ParamField path="reflect" type="boolean" default="false">
+  When `true`, the property value is serialized back to the corresponding HTML
+  attribute whenever the property changes.
+</ParamField>
+
+<ParamField path="converter" type="AttributeConverter | function">
+  Customizes how the attribute value is converted to and from the property
+  value. Can be:
+  - A function `(value: string | null, type?) => T` for attribute-to-property conversion only.
+  - An object with optional `fromAttribute(value, type)` and `toAttribute(value, type)` methods.
+</ParamField>
+
+<ParamField path="hasChanged" type="(value: T, oldValue: T) => boolean">
+  A function that determines whether a property change should trigger an
+  update. By default, uses strict inequality (`!==`). Return `true` to
+  request an update.
+</ParamField>
+
+<ParamField path="noAccessor" type="boolean" default="false">
+  When `true`, no getter/setter accessor is generated for the property.
+  You become responsible for calling `this.requestUpdate(propertyName, oldValue)`
+  manually when the property changes.
+</ParamField>
+
+<ParamField path="state" type="boolean" default="false">
+  When `true`, marks the property as internal state. The property is not added
+  to `observedAttributes`. Prefer using the [`@state`](/api/decorators/state)
+  decorator instead.
+</ParamField>
+
+<ParamField path="useDefault" type="boolean" default="false">
+  When `true`, the initial value of the property is treated as the default
+  value. The initial value does not reflect to the attribute, and when the
+  attribute is removed the property resets to its default. Properties that
+  reflect to attributes should generally set `useDefault: true` so their
+  initial values do not cause an initial reflection.
+</ParamField>
+
+## Examples
+
+### Basic usage
+
+```typescript
+import {LitElement, html} from 'lit';
+import {property} from 'lit/decorators.js';
+
+class MyElement extends LitElement {
+  @property({type: String})
+  name = 'World';
+
+  @property({type: Number})
+  count = 0;
+
+  @property({type: Boolean})
+  disabled = false;
+
+  render() {
+    return html`<p>Hello, ${this.name}! Count: ${this.count}</p>`;
+  }
+}
+```
+
+### Custom attribute name
+
+```typescript
+class MyElement extends LitElement {
+  @property({type: String, attribute: 'first-name'})
+  firstName = '';
+}
+```
+
+Set from HTML as:
+
+```html
+<my-element first-name="Ada"></my-element>
+```
+
+### Reflecting to an attribute
+
+```typescript
+class MyElement extends LitElement {
+  @property({type: String, reflect: true})
+  status = 'idle';
+}
+```
+
+When `this.status` is set to `'active'`, the element's `status` attribute
+is updated automatically, which enables CSS attribute selectors:
+
+```css
+my-element[status='active'] {
+  color: green;
+}
+```
+
+### Custom converter
+
+```typescript
+import {LitElement} from 'lit';
+import {property} from 'lit/decorators.js';
+
+class MyElement extends LitElement {
+  @property({
+    converter: {
+      fromAttribute(value: string | null) {
+        return value ? value.split(',').map(Number) : [];
+      },
+      toAttribute(value: number[]) {
+        return value.join(',');
+      },
+    },
+    reflect: true,
+  })
+  items: number[] = [];
+}
+```
+
+### Without decorators
+
+Use the static `properties` field to declare properties without decorators:
+
+```typescript
+import {LitElement, html} from 'lit';
+
+class MyElement extends LitElement {
+  static properties = {
+    name: {type: String},
+    count: {type: Number},
+    disabled: {type: Boolean},
+  };
+
+  constructor() {
+    super();
+    this.name = 'World';
+    this.count = 0;
+    this.disabled = false;
+  }
+
+  render() {
+    return html`<p>Hello, ${this.name}!</p>`;
+  }
+}
+```

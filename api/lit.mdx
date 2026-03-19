@@ -1,0 +1,181 @@
+---
+title: lit
+description: API reference for the lit package, the main entry point for Lit web components.
+---
+
+The `lit` package is the primary entry point for building Lit web components. It re-exports everything from `lit-element` and `lit-html`, giving you templating, rendering, reactive properties, and styles from a single import.
+
+```typescript
+import { LitElement, html, css, render } from 'lit';
+```
+
+## Template tags
+
+### `html`
+
+Interprets a template literal as an HTML template that can efficiently render to and update a container.
+
+```typescript
+const html: (strings: TemplateStringsArray, ...values: unknown[]) => HTMLTemplateResult
+```
+
+```typescript
+const header = (title: string) => html`<h1>${title}</h1>`;
+```
+
+Returns an `HTMLTemplateResult`. The tag is lazy — no work is done until the template is rendered. When rendering, if a template comes from the same expression as a previously rendered result, it is efficiently updated instead of replaced.
+
+### `svg`
+
+Interprets a template literal as an SVG fragment.
+
+```typescript
+const svg: (strings: TemplateStringsArray, ...values: unknown[]) => SVGTemplateResult
+```
+
+```typescript
+const rect = svg`<rect width="10" height="10"></rect>`;
+
+const myImage = html`
+  <svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">
+    ${rect}
+  </svg>`;
+```
+
+<Warning>
+The `svg` tag should only be used for SVG fragments, or elements that would be contained **inside** an `<svg>` HTML element. Do not place an `<svg>` element itself inside an `svg`-tagged template.
+</Warning>
+
+### `mathml`
+
+Interprets a template literal as a MathML fragment.
+
+```typescript
+const mathml: (strings: TemplateStringsArray, ...values: unknown[]) => MathMLTemplateResult
+```
+
+### `css`
+
+A template literal tag for element styles. Used with `LitElement.styles`.
+
+```typescript
+const css: (
+  strings: TemplateStringsArray,
+  ...values: (CSSResultGroup | number)[]
+) => CSSResult
+```
+
+```typescript
+static styles = css`
+  :host { display: block; }
+  p { color: blue; }
+`;
+```
+
+For security reasons, only literal string values and numbers may be used in embedded expressions. Use `unsafeCSS` to incorporate non-literal values.
+
+## Rendering
+
+### `render(value, container, options?)`
+
+Renders a value, usually a `TemplateResult`, to a DOM container.
+
+```typescript
+const render: (
+  value: unknown,
+  container: HTMLElement | SVGElement | DocumentFragment,
+  options?: RenderOptions
+) => RootPart
+```
+
+```typescript
+import { html, render } from 'lit';
+
+const name = 'Zoe';
+render(html`<p>Hello, ${name}!</p>`, document.body);
+```
+
+<ParamField path="value" type="unknown" required>
+  Any renderable value — typically a `TemplateResult` created by `html` or `svg`, but also strings, numbers, DOM nodes, arrays, or iterables.
+</ParamField>
+
+<ParamField path="container" type="HTMLElement | SVGElement | DocumentFragment" required>
+  A DOM container to render to. The first render appends the rendered value to the container. Subsequent renders efficiently update the rendered value if the same result type was previously rendered there.
+</ParamField>
+
+<ParamField path="options" type="RenderOptions">
+  Options controlling rendering behavior. See [`RenderOptions`](/api/lit-html#renderoptions) for full details.
+</ParamField>
+
+<ResponseField name="returns" type="RootPart">
+  A `RootPart` representing the rendered tree. Call `part.setConnected(false)` before discarding to allow `AsyncDirective`s to clean up.
+</ResponseField>
+
+## Classes
+
+### `LitElement`
+
+Base class for Lit web components. Manages reactive properties and renders a lit-html template into a shadow root.
+
+```typescript
+class LitElement extends ReactiveElement
+```
+
+See [LitElement API reference](/api/lit-element) for full documentation.
+
+### `ReactiveElement`
+
+Base class for custom elements with reactive properties and attributes, without lit-html templating.
+
+See the `@lit/reactive-element` package for full documentation.
+
+## Sentinels
+
+### `noChange`
+
+```typescript
+const noChange: unique symbol
+```
+
+A sentinel value that signals a directive has handled a value and nothing should be written to the DOM. Returning `noChange` from a directive's `update` or `render` method leaves the previously committed value in place.
+
+### `nothing`
+
+```typescript
+const nothing: unique symbol
+```
+
+A sentinel value that signals a `ChildPart` to fully clear its content.
+
+```typescript
+const button = html`${
+  user.isAdmin
+    ? html`<button>DELETE</button>`
+    : nothing
+}`;
+```
+
+In child expressions, `nothing` renders no nodes. In attribute expressions, `nothing` removes the attribute entirely. In property expressions, `nothing` becomes `undefined`.
+
+## Re-exported types
+
+All types from `lit-element` and `lit-html` are re-exported. Commonly used types include:
+
+| Type | Description |
+|------|-------------|
+| `PropertyValues<T>` | Map of changed property keys to their previous values. Use `PropertyValues<this>` in lifecycle methods for strong typing. |
+| `PropertyDeclaration` | Options for a reactive property declaration. |
+| `PropertyDeclarations` | Map of property names to `PropertyDeclaration` options (for the static `properties` block). |
+| `CSSResult` | Return type of the `css` tag. |
+| `CSSResultGroup` | A `CSSResult`, `CSSStyleSheet`, or nested array of those. |
+| `TemplateResult` | Return type of `html` and `svg` tags. |
+| `HTMLTemplateResult` | `TemplateResult` specialized for HTML. |
+| `SVGTemplateResult` | `TemplateResult` specialized for SVG. |
+| `MathMLTemplateResult` | `TemplateResult` specialized for MathML. |
+| `RootPart` | Top-level `ChildPart` returned from `render()`. |
+| `RenderOptions` | Options passed to `render()`. |
+| `Part` | Union of all part types (`ChildPart \| AttributePart \| PropertyPart \| BooleanAttributePart \| ElementPart \| EventPart`). |
+| `ReactiveController` | Interface for reactive controllers. |
+| `ReactiveControllerHost` | Interface implemented by `ReactiveElement`. |
+| `ComplexAttributeConverter` | Interface for custom attribute converters. |
+| `HasChanged` | Function type `(value, old) => boolean` for change detection. |

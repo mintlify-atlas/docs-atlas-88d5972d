@@ -1,0 +1,276 @@
+---
+title: Lifecycle
+description: Understand the full Lit component lifecycle — from connection callbacks through the reactive update cycle to post-render hooks and the updateComplete promise.
+---
+
+Lit components participate in two lifecycles: the standard [custom element lifecycle](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements#custom_element_lifecycle_callbacks) defined by the browser, and Lit's own reactive update cycle that efficiently batches and applies property changes.
+
+## Custom element callbacks
+
+### `connectedCallback()`
+
+Called when the element is added to the document. Lit uses this to set up the shadow root (on first connection) and enable the update cycle.
+
+```typescript
+connectedCallback() {
+  super.connectedCallback(); // always call super
+  window.addEventListener('resize', this._onResize);
+}
+```
+
+Always call `super.connectedCallback()`. Lit's implementation creates the `renderRoot` and calls `hostConnected()` on any registered reactive controllers.
+
+<Warning>
+An element may be disconnected and reconnected multiple times. Any work done in `connectedCallback()` should be cleaned up in `disconnectedCallback()`.
+</Warning>
+
+### `disconnectedCallback()`
+
+Called when the element is removed from the document. Use it to remove external event listeners, cancel timers, and release any resources held by the component.
+
+```typescript
+disconnectedCallback() {
+  super.disconnectedCallback(); // always call super
+  window.removeEventListener('resize', this._onResize);
+}
+```
+
+### `attributeChangedCallback()`
+
+Called by the browser when one of the element's observed attributes changes. Lit implements this to synchronize attribute values with reactive properties:
+
+```typescript
+attributeChangedCallback(
+  name: string,
+  _old: string | null,
+  value: string | null
+) {
+  this._$attributeToProperty(name, value);
+}
+```
+
+You rarely need to override this. Declare `@property()` options instead and let Lit handle the conversion.
+
+## The reactive update cycle
+
+When a reactive property changes, Lit runs the following sequence asynchronously:
+
+```
+requestUpdate()
+  → scheduleUpdate()
+    → performUpdate()
+      → shouldUpdate(changedProperties)
+      → willUpdate(changedProperties)
+      → update(changedProperties)
+        → render()              ← LitElement only
+      → firstUpdated(changedProperties)  ← first update only
+      → updated(changedProperties)
+```
+
+The entire sequence from `willUpdate` through `updated` is synchronous once it starts. Only the scheduling is asynchronous.
+
+### `requestUpdate()`
+
+Called automatically when a reactive property changes. You can also call it manually to trigger an update from non-property state:
+
+```typescript
+requestUpdate(
+  name?: PropertyKey,      // property name (optional)
+  oldValue?: unknown,       // previous value (optional)
+  options?: PropertyDeclaration // override options (optional)
+): void
+```
+
+```typescript
+// Trigger an update without a specific property
+this.requestUpdate();
+
+// Trigger with property tracking (used by generated accessors)
+this.requestUpdate('myProp', oldValue);
+```
+
+Multiple calls to `requestUpdate()` before the microtask queue drains are coalesced into a single update.
+
+### `scheduleUpdate()`
+
+Controls the timing of the update. By default it calls `performUpdate()` synchronously in a microtask. Override to defer updates to a specific frame:
+
+```typescript
+protected override async scheduleUpdate(): Promise<unknown> {
+  // Delay rendering until the next animation frame
+  await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+  super.scheduleUpdate();
+}
+```
+
+### `performUpdate()`
+
+Executes the update synchronously. Can be called directly to flush a pending update immediately (useful in tests):
+
+```typescript
+await el.updateComplete; // wait for any pending update
+// or
+el.performUpdate();      // flush synchronously
+```
+
+### `shouldUpdate(changedProperties)`
+
+Return `false` to abort the update cycle. Rarely needed — prefer `willUpdate` for conditional computation.
+
+```typescript
+protected shouldUpdate(changedProperties: PropertyValues<this>): boolean {
+  // Only update when 'src' has a value
+  return this.src !== '';
+}
+```
+
+## `willUpdate(changedProperties)`
+
+Called before `update()` and `render()`. Use it to compute derived values that depend on other properties:
+
+```typescript
+willUpdate(changedProperties: PropertyValues<this>) {
+  if (changedProperties.has('firstName') || changedProperties.has('lastName')) {
+    this.fullName = `${this.firstName} ${this.lastName}`;
+  }
+}
+
+render() {
+  return html`<p>Hello, ${this.fullName}!</p>`;
+}
+```
+
+`willUpdate` runs before controllers' `hostUpdate()` hooks and before `render()`, so derived values computed here are available in the template.
+
+## `update(changedProperties)`
+
+Reflects property values to attributes and (in `LitElement`) calls `render()`. You can override this, but you must call `super.update(changedProperties)` to perform rendering:
+
+```typescript
+protected override update(changedProperties: PropertyValues<this>) {
+  super.update(changedProperties); // triggers render()
+  // DOM is updated at this point
+}
+```
+
+<Note>
+Setting reactive properties inside `update()` does not trigger another synchronous update — it schedules the next update instead.
+</Note>
+
+## `render()`
+
+Defined by `LitElement`. Return a `TemplateResult` describing the component's shadow DOM:
+
+```typescript
+protected render(): unknown {
+  return html`
+    <header>${this.title}</header>
+    <main><slot></slot></main>
+  `;
+}
+```
+
+The default implementation returns `noChange`, meaning no DOM is rendered. Always override `render()` in your component.
+
+Setting reactive properties inside `render()` does not trigger another update.
+
+## `firstUpdated(changedProperties)`
+
+Called once, after the first update completes and the component's DOM is available. Use it for one-time setup that requires access to rendered DOM:
+
+```typescript
+firstUpdated(changedProperties: PropertyValues<this>) {
+  // this.renderRoot is guaranteed to exist here
+  this.shadowRoot!.querySelector('input')?.focus();
+}
+```
+
+`hasUpdated` is `false` before this call and `true` after.
+
+## `updated(changedProperties)`
+
+Called after every update, including the first. Use it to react to DOM changes, e.g. to observe a property change and perform a side effect:
+
+```typescript
+updated(changedProperties: PropertyValues<this>) {
+  if (changedProperties.has('src')) {
+    this._loadImage(this.src);
+  }
+}
+```
+
+<Warning>
+Setting reactive properties in `updated()` triggers another update cycle. This can be intentional but should be used carefully to avoid infinite loops.
+</Warning>
+
+## `updateComplete`
+
+`updateComplete` is a `Promise<boolean>` that resolves when the current update cycle (and any update triggered during it) completes:
+
+```typescript
+get updateComplete(): Promise<boolean>
+```
+
+```typescript
+// Wait for the component to finish updating
+await this.updateComplete;
+console.log('DOM is up to date');
+```
+
+The resolved boolean is `true` if the component completed without triggering another update, or `false` if a property was set during `updated()`.
+
+To extend `updateComplete` to include additional async work (e.g., waiting for a child element), override `getUpdateComplete()`:
+
+```typescript
+protected override async getUpdateComplete(): Promise<boolean> {
+  const result = await super.getUpdateComplete();
+  // Also wait for a child element to finish updating
+  await this._myChild.updateComplete;
+  return result;
+}
+```
+
+## `hasUpdated`
+
+A boolean property that is `false` before the first update and `true` after `firstUpdated()` has been called:
+
+```typescript
+hasUpdated: boolean;
+```
+
+Use it to guard code that requires rendered DOM:
+
+```typescript
+if (this.hasUpdated) {
+  this.shadowRoot!.querySelector('#output')!.textContent = this.value;
+}
+```
+
+## Lifecycle at a glance
+
+<Steps>
+  <Step title="connectedCallback">
+    Element added to the DOM. Shadow root created on first connection. Update cycle enabled.
+  </Step>
+  <Step title="requestUpdate">
+    Property change or manual call schedules an async update. Multiple changes are batched.
+  </Step>
+  <Step title="willUpdate(changedProperties)">
+    Compute derived values before rendering. No DOM access yet.
+  </Step>
+  <Step title="update(changedProperties) → render()">
+    Reflect attributes and call `render()`. Lit applies the returned `TemplateResult` to the shadow root.
+  </Step>
+  <Step title="firstUpdated(changedProperties)">
+    Called once after the first render. Safe to access shadow DOM here.
+  </Step>
+  <Step title="updated(changedProperties)">
+    Called after every render. Use for side effects driven by property changes.
+  </Step>
+  <Step title="updateComplete resolves">
+    The `updateComplete` promise resolves. Awaiting it gives you a point after which the DOM reflects the latest state.
+  </Step>
+  <Step title="disconnectedCallback">
+    Element removed from the DOM. Clean up event listeners and resources.
+  </Step>
+</Steps>

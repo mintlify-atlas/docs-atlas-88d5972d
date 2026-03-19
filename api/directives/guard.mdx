@@ -1,0 +1,99 @@
+---
+title: guard
+description: A directive that prevents re-evaluation of a template function until one or more dependencies change.
+---
+
+The `guard` directive runs a template function only when its tracked dependencies change. If the dependencies are the same as the previous render (by strict equality), `guard` skips re-evaluation and returns `noChange`, leaving the DOM untouched.
+
+## Import
+
+```typescript
+import { guard } from 'lit/directives/guard.js';
+```
+
+## Signature
+
+```typescript
+guard(dependencies: unknown[], valueFn: () => unknown): DirectiveResult
+```
+
+## Parameters
+
+<ParamField path="dependencies" type="unknown[]" required>
+  An array of values to check before re-running `valueFn`. Each element is compared to the previous value at the same index using strict equality (`===`). Nested objects and arrays are compared by reference, not by deep equality.
+</ParamField>
+
+<ParamField path="valueFn" type="() => unknown" required>
+  A function that produces the value to render. It is only called when at least one dependency has changed. The return value is typically a `TemplateResult`.
+</ParamField>
+
+## Return type
+
+`DirectiveResult` — an opaque value consumed by lit-html's template engine.
+
+## Equality check
+
+Dependencies are compared with **strict equality** (`===`) on a per-element basis:
+
+- Primitives (numbers, strings, booleans) are compared by value.
+- Objects and arrays are compared by reference — mutating an existing object or array without replacing it will not trigger a re-render.
+
+`guard` works best with **immutable data patterns** where updates produce new object references.
+
+## Example: skipping expensive computation
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import { guard } from 'lit/directives/guard.js';
+
+@customElement('data-view')
+class DataView extends LitElement {
+  @state() private _items: string[] = [];
+  @state() private _theme = 'light';
+
+  private _expensiveTransform(items: string[]) {
+    // Imagine this is slow
+    return items.map((item) => item.toUpperCase());
+  }
+
+  render() {
+    return html`
+      <div class=${this._theme}>
+        ${guard([this._items], () =>
+          this._expensiveTransform(this._items).map(
+            (item) => html`<p>${item}</p>`
+          )
+        )}
+      </div>
+    `;
+  }
+}
+```
+
+In this example, `_expensiveTransform` is only called when `this._items` is replaced with a new array reference. Changing `_theme` alone will re-render the outer template but skip the expensive inner computation.
+
+## Example: multiple dependencies
+
+```typescript
+html`
+  <div>
+    ${guard([user.id, company.id], () => html`
+      <profile-card .user=${user} .company=${company}></profile-card>
+    `)}
+  </div>
+`
+```
+
+The template only re-renders when either `user.id` or `company.id` changes.
+
+## When to use
+
+- The template function performs expensive computation (sorting, filtering, mapping large arrays).
+- You are using immutable data and want to skip renders when references have not changed.
+
+## When not to use
+
+- When the computation is cheap — the overhead of `guard` may outweigh the savings.
+- When dependencies are mutable objects that are updated in-place — `guard` will not detect the change.
+- When Lit's own dirty-checking of reactive properties is sufficient to prevent unnecessary work.

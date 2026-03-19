@@ -1,0 +1,192 @@
+---
+title: Templates
+description: Learn how to use Lit's html tagged template literal to declare efficient, expressive UI with binding expressions for text, attributes, properties, events, and children.
+---
+
+Lit templates are written using JavaScript's tagged template literal syntax. The `html` tag function returns a `TemplateResult` — a lightweight description of the DOM to render. Lit uses this description to efficiently create and update real DOM, touching only the parts that changed.
+
+## The `html` tag
+
+```typescript
+import { html } from 'lit';
+
+const greeting = (name: string) => html`<p>Hello, ${name}!</p>`;
+```
+
+The `html` tag parses the template strings once and caches the result. On subsequent renders with the same template expression, Lit reuses the parsed structure and only updates the dynamic values — it never re-parses or rebuilds static HTML.
+
+### TemplateResult
+
+`html` returns a `TemplateResult`:
+
+```typescript
+export type TemplateResult<T extends ResultType = ResultType> = {
+  ['_$litType$']: T;
+  strings: TemplateStringsArray;
+  values: unknown[];
+};
+```
+
+`TemplateResult` objects are inert — they carry no DOM. DOM is created or updated only when Lit renders them into a container (your component's shadow root, via the `render()` call in `update()`).
+
+## Binding expressions
+
+Expressions (`${ }`) in a Lit template can appear in four syntactic positions, each with distinct behavior.
+
+### Text / child content
+
+Expressions in child position render as text nodes or nested templates:
+
+```typescript
+render() {
+  return html`
+    <p>${this.message}</p>
+    <div>${this.count > 0 ? html`<span>${this.count}</span>` : nothing}</div>
+  `;
+}
+```
+
+Accepted values: `string`, `number`, `boolean`, `TemplateResult`, `Node`, arrays/iterables of the above, `nothing`, `null`, `undefined`.
+
+<Info>
+`nothing` (imported from `'lit'`) is the preferred sentinel to render no content — it cleanly removes child nodes without leaving empty text.
+</Info>
+
+### Attribute bindings
+
+Set an element attribute using an expression in attribute value position:
+
+```typescript
+html`<input type="text" placeholder=${this.hint} />`
+```
+
+If the value is `null` or `undefined`, the attribute is removed. Attribute values are always strings.
+
+### Boolean attribute bindings
+
+Prefix the attribute name with `?` to toggle a boolean attribute:
+
+```typescript
+html`<button ?disabled=${this.isLoading}>Submit</button>`
+```
+
+When the expression is truthy, the attribute is set to `""` (empty string, which is truthy in HTML). When falsy, the attribute is removed entirely.
+
+### Property bindings
+
+Prefix with `.` to set a DOM property instead of an HTML attribute:
+
+```typescript
+html`<input .value=${this.inputValue} />`
+```
+
+Use property bindings when the value is a complex type (object, array) or when you need to set a DOM property directly (e.g. `.value` on `<input>` for programmatic updates).
+
+### Event bindings
+
+Prefix with `@` to add an event listener:
+
+```typescript
+html`<button @click=${this._handleClick}>Click me</button>`;
+```
+
+The expression can be a function or an object with a `handleEvent` method. Lit adds and removes the listener efficiently — it won't re-add a listener if the function reference hasn't changed.
+
+```typescript
+private _handleClick(e: Event) {
+  console.log('clicked', e.target);
+}
+```
+
+### Child node binding
+
+Use `.` prefix on an element binding (no attribute name) to pass a directive or value to the element itself:
+
+```typescript
+import { ref } from 'lit/directives/ref.js';
+
+html`<canvas ${ref(this._canvasRef)}></canvas>`;
+```
+
+## Summary of binding prefixes
+
+| Syntax | Type | Example |
+|--------|------|---------|
+| `attr=${val}` | Attribute | `class=${this.cls}` |
+| `?attr=${val}` | Boolean attribute | `?hidden=${!this.visible}` |
+| `.prop=${val}` | Property | `.value=${this.text}` |
+| `@event=${fn}` | Event listener | `@input=${this._onInput}` |
+| `${val}` (child) | Child content | `${this.label}` |
+
+## How Lit updates efficiently
+
+On first render, Lit creates real DOM from the template and records the location of each binding as a `Part`. On subsequent renders with the same template:
+
+1. Lit calls `render()` to get a new `TemplateResult`.
+2. It walks only the recorded `Part` positions.
+3. It compares each new value against the previously committed value using `Object.is()` (strict identity).
+4. It updates only the DOM nodes or attributes where the value changed.
+
+Static HTML in the template is never re-created or diff'd — only dynamic binding positions are visited.
+
+## The `svg` tag
+
+Use `svg` for SVG fragments that will be embedded inside an `<svg>` element:
+
+```typescript
+import { html, svg } from 'lit';
+
+const icon = (size: number) => svg`
+  <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" />
+`;
+
+render() {
+  return html`
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      ${icon(24)}
+    </svg>
+  `;
+}
+```
+
+<Warning>
+The `svg` tag is for SVG *fragments* — content that belongs *inside* an `<svg>` element. Do not tag an `<svg>` element itself with `svg`; use `html` for that.
+</Warning>
+
+## The static `html` tag
+
+For rare cases where you need to include truly static, dynamic markup (such as a variable tag name or attribute name), import `html` from `lit/static-html.js`:
+
+```typescript
+import { html, literal } from 'lit/static-html.js';
+
+const tag = literal`div`;
+
+const result = html`<${tag} class="box">content</${tag}>`;
+```
+
+<Warning>
+`literal` values must come from developer-controlled, trusted sources. They are injected directly into the template string before parsing, so accepting user input here is an XSS risk.
+</Warning>
+
+Don't use `literal` for ordinary dynamic content — standard `html` binding expressions handle that safely and efficiently.
+
+## Composing templates
+
+Because `TemplateResult` is a plain value, templates compose naturally:
+
+```typescript
+const header = (title: string) => html`<h1>${title}</h1>`;
+
+const footer = html`<footer>&copy; 2024</footer>`;
+
+render() {
+  return html`
+    ${header(this.title)}
+    <main>${this.content}</main>
+    ${footer}
+  `;
+}
+```
+
+Lit correctly tracks identity across composed templates and updates only what changes.

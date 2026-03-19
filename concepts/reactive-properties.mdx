@@ -1,0 +1,252 @@
+---
+title: Reactive properties
+description: Understand how to declare reactive properties and internal state in Lit, configure property options, and work with the property update cycle.
+---
+
+Reactive properties are the core data model of a Lit component. When a reactive property changes, the component automatically schedules an asynchronous update and re-renders. Lit provides two ways to declare reactive properties: the `@property()` decorator and the static `properties` object.
+
+## Declaring properties with `@property()`
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
+
+@customElement('my-element')
+class MyElement extends LitElement {
+  @property({ type: String })
+  label = 'Default';
+
+  @property({ type: Number })
+  count = 0;
+
+  @property({ type: Boolean, reflect: true })
+  disabled = false;
+
+  render() {
+    return html`<button ?disabled=${this.disabled}>${this.label}: ${this.count}</button>`;
+  }
+}
+```
+
+The decorator creates a reactive accessor on the class prototype. Setting the property calls `requestUpdate()` and the component re-renders asynchronously.
+
+## Declaring properties without decorators
+
+Use the static `properties` getter for plain JavaScript or decorator-free TypeScript:
+
+```typescript
+import { LitElement, html } from 'lit';
+
+class MyElement extends LitElement {
+  static get properties() {
+    return {
+      label: { type: String },
+      count: { type: Number },
+      disabled: { type: Boolean, reflect: true },
+    };
+  }
+
+  constructor() {
+    super();
+    this.label = 'Default';
+    this.count = 0;
+    this.disabled = false;
+  }
+
+  render() {
+    return html`<button ?disabled=${this.disabled}>${this.label}: ${this.count}</button>`;
+  }
+}
+
+customElements.define('my-element', MyElement);
+```
+
+## Property options (`PropertyDeclaration`)
+
+Both `@property()` and the `properties` object accept a `PropertyDeclaration` options object:
+
+```typescript
+export interface PropertyDeclaration<Type = unknown, TypeHint = unknown> {
+  readonly attribute?: boolean | string;
+  readonly type?: TypeHint;
+  readonly converter?: AttributeConverter<Type, TypeHint>;
+  readonly reflect?: boolean;
+  hasChanged?(value: Type, oldValue: Type): boolean;
+  readonly state?: boolean;
+  readonly noAccessor?: boolean;
+  useDefault?: boolean;
+}
+```
+
+### `attribute`
+
+Controls the HTML attribute name that maps to this property.
+
+```typescript
+// Property name: firstName, observed attribute: first-name
+@property({ attribute: 'first-name' })
+firstName = '';
+
+// Disable attribute observation entirely
+@property({ attribute: false })
+data = {};
+```
+
+By default, the attribute name is the lowercase version of the property name (`fooBar` → `foobar`).
+
+### `type`
+
+A type hint passed to the converter. The default converter handles `String`, `Number`, `Boolean`, `Array`, and `Object`:
+
+```typescript
+@property({ type: Number }) count = 0;
+@property({ type: Boolean }) checked = false;
+@property({ type: Array }) items: string[] = [];
+```
+
+### `reflect`
+
+When `true`, setting the property also updates the corresponding attribute via the converter's `toAttribute` method:
+
+```typescript
+@property({ type: Boolean, reflect: true })
+disabled = false;
+// Setting this.disabled = true adds disabled="" on the element
+// Setting this.disabled = false removes the attribute
+```
+
+### `converter`
+
+Customizes how attribute strings are converted to property values and back.
+
+```typescript
+const dateConverter = {
+  fromAttribute(value: string | null): Date | null {
+    return value ? new Date(value) : null;
+  },
+  toAttribute(value: Date | null): string | null {
+    return value ? value.toISOString() : null;
+  },
+};
+
+@property({ converter: dateConverter, reflect: true })
+date: Date | null = null;
+```
+
+A converter can also be a single `fromAttribute` function:
+
+```typescript
+@property({ converter: (v) => v?.toUpperCase() ?? '' })
+tag = '';
+```
+
+### `hasChanged`
+
+Determines whether a new value should trigger an update. By default, Lit uses `Object.is()` (strict identity check):
+
+```typescript
+export const notEqual: HasChanged = (value: unknown, old: unknown): boolean =>
+  !Object.is(value, old);
+```
+
+Override `hasChanged` for deep equality on objects or arrays:
+
+```typescript
+@property({
+  type: Array,
+  hasChanged(newVal: string[], oldVal: string[]) {
+    return JSON.stringify(newVal) !== JSON.stringify(oldVal);
+  },
+})
+items: string[] = [];
+```
+
+## Default attribute converters
+
+The built-in `defaultConverter` maps type hints to DOM attributes:
+
+| Type | `fromAttribute` behavior | `toAttribute` behavior |
+|------|--------------------------|------------------------|
+| `String` | Returns the string as-is | Returns the string as-is |
+| `Number` | `Number(value)`, or `null` if attribute absent | Returns the number as-is |
+| `Boolean` | `true` if attribute present, `false` if absent | `""` if true, `null` (removes) if false |
+| `Object` | `JSON.parse(value)` | `JSON.stringify(value)` |
+| `Array` | `JSON.parse(value)` | `JSON.stringify(value)` |
+
+## `@state()` for internal reactive state
+
+Use `@state()` for private data that drives rendering but shouldn't be part of the public API:
+
+```typescript
+import { state } from 'lit/decorators.js';
+
+@customElement('my-counter')
+class MyCounter extends LitElement {
+  @state()
+  private _count = 0;
+
+  render() {
+    return html`
+      <button @click=${() => this._count++}>Clicked ${this._count} times</button>
+    `;
+  }
+}
+```
+
+`@state()` is shorthand for `@property({ state: true, attribute: false })`. State properties:
+
+- Trigger reactive updates when changed.
+- Are not observed as attributes.
+- Are not reflected to attributes.
+- May be renamed by minifiers.
+
+<Info>
+As a convention, prefix `@state()` properties with an underscore (`_count`) to signal they are internal.
+</Info>
+
+## The property update cycle
+
+When you set a reactive property, Lit schedules an asynchronous update:
+
+<Steps>
+  <Step title="Property setter is called">
+    The generated accessor reads the old value, sets the new value, and calls `requestUpdate(name, oldValue, options)`.
+  </Step>
+  <Step title="requestUpdate() checks hasChanged">
+    If `hasChanged(newValue, oldValue)` returns `true`, the property is recorded in `_$changedProperties` and an async update is enqueued if one isn't already pending.
+  </Step>
+  <Step title="Update is batched">
+    Multiple property changes in the same microtask are batched into a single update cycle. The update runs after the current call stack clears.
+  </Step>
+  <Step title="performUpdate() runs">
+    `willUpdate()`, `update()` (which calls `render()`), `firstUpdated()` (on first update), and `updated()` are called in sequence.
+  </Step>
+</Steps>
+
+## `PropertyValues` and `changedProperties`
+
+Lifecycle methods like `willUpdate()`, `update()`, `firstUpdated()`, and `updated()` receive a `changedProperties` map:
+
+```typescript
+export type PropertyValues<T = any> = T extends object
+  ? PropertyValueMap<T>
+  : Map<PropertyKey, unknown>;
+```
+
+The map keys are property names; the values are the *previous* values before this update.
+
+```typescript
+willUpdate(changedProperties: PropertyValues<this>) {
+  if (changedProperties.has('firstName') || changedProperties.has('lastName')) {
+    this.fullName = `${this.firstName} ${this.lastName}`;
+  }
+}
+
+updated(changedProperties: PropertyValues<this>) {
+  if (changedProperties.has('src')) {
+    this._loadImage(this.src);
+  }
+}
+```
+
+Using `PropertyValues<this>` gives strongly-typed access to key/value pairs on `this`.

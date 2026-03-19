@@ -1,0 +1,96 @@
+---
+title: styleMap
+description: A directive that applies dynamic inline CSS styles to an element from a key-value object.
+---
+
+The `styleMap` directive sets inline CSS properties on an element using a `StyleInfo` object. Property names can be camelCase JavaScript identifiers or dash-case CSS property names. Setting a property's value to `null` or `undefined` removes it.
+
+## Import
+
+```typescript
+import { styleMap } from 'lit/directives/style-map.js';
+```
+
+## Signature
+
+```typescript
+styleMap(styleInfo: StyleInfo): DirectiveResult
+```
+
+### Types
+
+```typescript
+interface StyleInfo {
+  [name: string]: string | number | undefined | null;
+}
+```
+
+## Parameters
+
+<ParamField path="styleInfo" type="StyleInfo" required>
+  An object mapping CSS property names to their values. Keys with `null` or `undefined` values are removed from the element's inline style. Accepts camelCase JavaScript names (e.g., `backgroundColor`) or dash-case CSS names (e.g., `background-color`) and CSS custom properties (e.g., `--my-color`).
+</ParamField>
+
+## Return type
+
+`DirectiveResult` — an opaque value consumed by lit-html's template engine.
+
+## Property name handling
+
+| Key format | Example | Resolved as |
+|---|---|---|
+| camelCase | `backgroundColor` | `background-color` via property assignment |
+| dash-case | `background-color` | `background-color` via `setProperty()` |
+| CSS custom property | `--my-size` | `--my-size` via `setProperty()` |
+| vendor-prefixed camelCase | `webkitAppearance` | `-webkit-appearance` |
+
+To set a property as `!important`, append ` !important` to the value string:
+
+```typescript
+styleMap({ color: 'red !important' })
+```
+
+## Constraints
+
+<Warning>
+  `styleMap` must be used in the `style` attribute and must be the **only** expression in that attribute. Mixing `styleMap` with other interpolations in the same `style` attribute will throw an error.
+</Warning>
+
+## Example
+
+```typescript
+import { LitElement, html } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
+import { styleMap } from 'lit/directives/style-map.js';
+
+@customElement('my-box')
+class MyBox extends LitElement {
+  @property({ type: String }) color = 'blue';
+  @state() private _size = 100;
+
+  render() {
+    const styles = {
+      backgroundColor: this.color,
+      width: `${this._size}px`,
+      height: `${this._size}px`,
+      '--box-border-radius': '8px',
+      display: this._size > 0 ? 'block' : null,
+    };
+
+    return html`<div style=${styleMap(styles)}></div>`;
+  }
+}
+```
+
+Setting `display` to `null` when `_size` is `0` removes the property from the inline style entirely.
+
+## When to use
+
+- You need to dynamically set multiple CSS properties based on component state or properties.
+- You want to manage CSS custom properties reactively.
+- You prefer a declarative object over building style strings manually.
+
+## When not to use
+
+- Outside of a `style` attribute — `styleMap` will throw if placed elsewhere.
+- When you need to apply class-based styles — use [`classMap`](/api/directives/class-map) instead.

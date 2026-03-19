@@ -1,0 +1,327 @@
+---
+title: Getting started with SSR
+description: How to install @lit-labs/ssr and render Lit components on the server, including streaming, string collection, Express.js, Next.js, and Eleventy integrations.
+---
+
+This guide shows how to render Lit components on the server using `@lit-labs/ssr`, from basic setup to full framework integrations.
+
+<Warning>
+`@lit-labs/ssr` is part of [Lit Labs](https://lit.dev/docs/libraries/labs/) and is pre-release software. The API may change before a stable release.
+</Warning>
+
+## Installation
+
+```bash
+npm install @lit-labs/ssr
+```
+
+You also need `lit` as a peer dependency if it is not already installed:
+
+```bash
+npm install lit @lit-labs/ssr
+```
+
+## Core rendering API
+
+### renderThunked()
+
+The primary rendering function is `renderThunked()`. It accepts any lit-html renderable (typically a `TemplateResult`) and returns a `ThunkedRenderResult` — an array of strings and lazy thunks.
+
+```typescript
+import {renderThunked} from '@lit-labs/ssr';
+import type {RenderInfo} from '@lit-labs/ssr';
+
+function renderThunked(
+  value: unknown,
+  renderInfo?: Partial<RenderInfo>
+): ThunkedRenderResult
+```
+
+`renderThunked()` has lower overhead than `render()` and is the preferred function. `render()` exists for backwards compatibility and wraps `renderThunked()` in a `RenderResultIterator`.
+
+### Collecting to a string
+
+Two helpers in `@lit-labs/ssr/lib/render-result.js` collect a `ThunkedRenderResult` into a string:
+
+```typescript
+import {
+  collectResult,
+  collectResultSync,
+} from '@lit-labs/ssr/lib/render-result.js';
+
+// Async — awaits any Promises in the render result
+collectResult(result: RenderResult | ThunkedRenderResult): Promise<string>
+
+// Sync — throws if any Promises are encountered
+collectResultSync(result: RenderResult | ThunkedRenderResult): string
+```
+
+Use `collectResult` for components whose rendering is asynchronous. Use `collectResultSync` only when you are certain no async work occurs during rendering.
+
+### Streaming with RenderResultReadable
+
+For HTTP servers, prefer streaming over collecting to a string. `RenderResultReadable` is a Node.js `Readable` stream that reads from a `ThunkedRenderResult`:
+
+```typescript
+import {RenderResultReadable} from '@lit-labs/ssr/lib/render-result-readable.js';
+
+class RenderResultReadable extends Readable {
+  constructor(result: RenderResult | ThunkedRenderResult)
+}
+```
+
+Streaming has a lower memory footprint and lets browsers start parsing HTML before the full response arrives.
+
+## Basic example
+
+<Steps>
+  <Step title="Define a Lit component">
+    ```typescript
+    // src/my-greeting.ts
+    import {LitElement, html, css} from 'lit';
+    import {customElement, property} from 'lit/decorators.js';
+
+    @customElement('my-greeting')
+    export class MyGreeting extends LitElement {
+      static styles = css`
+        p { font-family: sans-serif; color: navy; }
+      `;
+
+      @property() name = 'World';
+
+      render() {
+        return html`<p>Hello, ${this.name}!</p>`;
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Render to a string on the server">
+    ```typescript
+    // src/server.ts
+    import {renderThunked} from '@lit-labs/ssr';
+    import {collectResult} from '@lit-labs/ssr/lib/render-result.js';
+    import {html} from 'lit';
+    import './my-greeting.js';
+
+    const ssrResult = renderThunked(html`
+      <my-greeting name="Lit SSR"></my-greeting>
+    `);
+
+    const markup = await collectResult(ssrResult);
+    console.log(markup);
+    ```
+
+    The output includes Declarative Shadow DOM markup:
+
+    ```html
+    <!--lit-part ...-->
+    <my-greeting name="Lit SSR">
+      <template shadowrootmode="open">
+        <style>p { font-family: sans-serif; color: navy; }</style>
+        <!--lit-part ...--><p>Hello, Lit SSR!</p><!--/lit-part-->
+      </template>
+    </my-greeting>
+    <!--/lit-part-->
+    ```
+  </Step>
+</Steps>
+
+## Express.js example
+
+The following is a complete Express server that streams server-rendered Lit components:
+
+```typescript
+// server.ts
+import express from 'express';
+import {Readable} from 'stream';
+import {renderThunked} from '@lit-labs/ssr';
+import {RenderResultReadable} from '@lit-labs/ssr/lib/render-result-readable.js';
+import {html} from 'lit';
+import './my-greeting.js'; // registers <my-greeting>
+
+const app = express();
+
+app.get('/', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+
+  const ssrResult = renderThunked(html`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Lit SSR Demo</title>
+        <script type="module" src="/bundle.js"></script>
+      </head>
+      <body>
+        <my-greeting name="Express"></my-greeting>
+      </body>
+    </html>
+  `);
+
+  Readable.from(new RenderResultReadable(ssrResult)).pipe(res);
+});
+
+app.listen(3000, () => console.log('Listening on http://localhost:3000'));
+```
+
+<Note>
+The example uses the server-only `html` tag from `@lit-labs/ssr` for the outer document shell. The `<my-greeting>` custom element inside it uses the normal Lit `html` tag from `lit` and will be hydrated on the client.
+</Note>
+
+## VM context rendering
+
+To prevent the DOM shim from polluting the Node.js global object and to give each request a fresh global, use `renderModule()` from `@lit-labs/ssr/lib/render-module.js`:
+
+```typescript
+import {renderModule} from '@lit-labs/ssr/lib/render-module.js';
+
+async function renderModule(
+  specifier: string,         // Module to load in the VM context
+  referrerPathOrFileUrl: string, // Referrer URL for module resolution
+  functionName: string,      // Exported function to call
+  args: unknown[]            // Arguments passed to the function
+): Promise<unknown>
+```
+
+Create a render module that `@lit-labs/ssr` will load inside the VM context:
+
+```typescript
+// src/render-template.ts  (loaded inside VM context)
+import {renderThunked} from '@lit-labs/ssr';
+import {html} from 'lit';
+import './my-greeting.js';
+
+export const renderTemplate = (name: string) =>
+  renderThunked(html`<my-greeting name=${name}></my-greeting>`);
+```
+
+```typescript
+// src/server.ts
+import {renderModule} from '@lit-labs/ssr/lib/render-module.js';
+import {RenderResultReadable} from '@lit-labs/ssr/lib/render-result-readable.js';
+
+// Execute renderTemplate inside an isolated VM context
+const ssrResult = await renderModule(
+  './render-template.js',
+  import.meta.url,
+  'renderTemplate',
+  ['Lit SSR']
+) as Iterable<unknown>;
+
+const stream = new RenderResultReadable(ssrResult as any);
+```
+
+<Warning>
+VM context rendering requires Node.js 14+ and the `--experimental-vm-modules` flag:
+
+```bash
+node --experimental-vm-modules server.js
+```
+</Warning>
+
+## Next.js integration
+
+`@lit-labs/nextjs` is a Next.js plugin that enables deep server rendering of Lit components. Without it, Lit component _shadow DOM_ is not rendered — only the outer tag and its attributes appear in the server HTML.
+
+<Steps>
+  <Step title="Install the package">
+    ```bash
+    npm install @lit-labs/nextjs
+    ```
+  </Step>
+
+  <Step title="Wrap your Next.js config">
+    ```javascript
+    // next.config.js
+    const withLitSSR = require('@lit-labs/nextjs')();
+
+    /** @type {import('next').NextConfig} */
+    const nextConfig = {
+      reactStrictMode: true,
+    };
+
+    module.exports = withLitSSR(nextConfig);
+    ```
+  </Step>
+
+  <Step title="Use Lit components in your pages">
+    In the **Pages Router**, import and use Lit components as usual — the plugin handles SSR transparently.
+
+    For the **App Router**, Lit components must be behind a `'use client'` boundary:
+
+    ```typescript
+    'use client';
+    import './my-greeting.js';
+
+    export default function Page() {
+      return <my-greeting name="Next.js" />;
+    }
+    ```
+
+    <Note>
+    In the App Router, React Server Components (RSCs) do not support deep SSR of Lit components. All Lit component usage must be in client components.
+    </Note>
+  </Step>
+</Steps>
+
+### Plugin options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `addDeclarativeShadowDomPolyfill` | `boolean` | `true` | Includes the DSD polyfill in the client bundle for browsers without native support. |
+| `webpackModuleRulesTest` | `RegExp` | Pages/App router pattern | RegExp matching the entry points where Lit SSR support is injected. |
+| `webpackModuleRulesExclude` | `Array<RegExp>` | `[/next\/dist\//, /node_modules/]` | Files excluded from SSR injection. |
+
+## Eleventy integration
+
+`@lit-labs/eleventy-plugin-lit` pre-renders Lit components at Eleventy build time.
+
+<Steps>
+  <Step title="Install the package">
+    ```bash
+    npm install @lit-labs/eleventy-plugin-lit
+    ```
+  </Step>
+
+  <Step title="Register the plugin">
+    ```javascript
+    // .eleventy.js
+    const litPlugin = require('@lit-labs/eleventy-plugin-lit');
+
+    module.exports = function (eleventyConfig) {
+      eleventyConfig.addPlugin(litPlugin, {
+        mode: 'worker',
+        componentModules: [
+          'js/my-greeting.js',
+          'js/other-component.js',
+        ],
+      });
+    };
+    ```
+  </Step>
+
+  <Step title="Use components in Markdown or HTML">
+    ```markdown
+    # Greetings
+
+    <my-greeting name="Eleventy"></my-greeting>
+    ```
+
+    Eleventy will output HTML with the component's shadow DOM inlined as Declarative Shadow DOM.
+  </Step>
+</Steps>
+
+### Plugin options
+
+| Option | Type | Description |
+|---|---|---|
+| `mode` | `'worker' \| 'vm'` | `'worker'` uses Node.js worker threads; `'vm'` uses `vm.Module` (requires `--experimental-vm-modules`). |
+| `componentModules` | `string[]` | Paths to JS files (relative to the Eleventy root) containing component definitions. |
+
+<Tip>
+Add a watch target so Eleventy rebuilds when component files change:
+
+```javascript
+eleventyConfig.addWatchTarget('js/');
+```
+</Tip>
