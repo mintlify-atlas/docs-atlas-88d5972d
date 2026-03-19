@@ -1,0 +1,164 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Lit",
+  "projectDescription": "Lit is a simple, fast library for building lightweight, standards-based web components using reactive state, scoped styles, and expressive HTML templates.",
+  "theme": "palm",
+  "primaryColor": "#344cfc",
+  "lightColor": "#bcbcbc",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/components",
+              "concepts/templates",
+              "concepts/reactive-properties",
+              "concepts/styles",
+              "concepts/lifecycle"
+            ]
+          },
+          {
+            "group": "Templates & Directives",
+            "pages": [
+              "templates/expressions",
+              "templates/conditionals",
+              "templates/lists",
+              "templates/built-in-directives"
+            ]
+          },
+          {
+            "group": "Reactive Controllers",
+            "pages": [
+              "controllers/overview",
+              "controllers/built-in-controllers"
+            ]
+          },
+          {
+            "group": "Additional Libraries",
+            "pages": [
+              "libraries/context",
+              "libraries/task",
+              "libraries/localize",
+              "libraries/react-integration"
+            ]
+          },
+          {
+            "group": "Server-Side Rendering",
+            "pages": [
+              "ssr/overview",
+              "ssr/getting-started",
+              "ssr/hydration"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/typescript",
+              "guides/testing",
+              "guides/publishing",
+              "guides/migration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "lit",
+            "pages": [
+              "api/lit",
+              "api/lit-element",
+              "api/lit-html"
+            ]
+          },
+          {
+            "group": "Decorators",
+            "pages": [
+              "api/decorators/custom-element",
+              "api/decorators/property",
+              "api/decorators/state",
+              "api/decorators/query",
+              "api/decorators/event-options"
+            ]
+          },
+          {
+            "group": "Directives",
+            "pages": [
+              "api/directives/class-map",
+              "api/directives/style-map",
+              "api/directives/repeat",
+              "api/directives/ref",
+              "api/directives/cache",
+              "api/directives/guard",
+              "api/directives/live",
+              "api/directives/async-directives"
+            ]
+          },
+          {
+            "group": "Reactive Element",
+            "pages": [
+              "api/reactive-element",
+              "api/reactive-controller"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Reactive properties with automatic re-rendering on state changes",
+    "Expressive HTML templates using tagged template literals",
+    "Scoped CSS styles with Shadow DOM encapsulation",
+    "Lightweight component lifecycle with efficient diffing",
+    "Rich set of built-in directives (repeat, classMap, styleMap, ref, etc.)",
+    "TypeScript decorators for clean component authoring",
+    "Reactive controllers for composable, reusable logic",
+    "Server-side rendering support via @lit-labs/ssr",
+    "Context protocol for passing data through element trees",
+    "Async task management with @lit/task"
+  ],
+  "publicApiSurface": [
+    "LitElement (base class for web components)",
+    "html (tagged template literal for HTML templates)",
+    "css (tagged template literal for scoped styles)",
+    "svg (tagged template literal for SVG templates)",
+    "render() (renders a template to a container)",
+    "ReactiveElement (low-level reactive base class)",
+    "@customElement() decorator",
+    "@property() decorator",
+    "@state() decorator",
+    "@query() / @queryAll() / @queryAsync() decorators",
+    "@eventOptions() decorator",
+    "repeat() directive",
+    "classMap() directive",
+    "styleMap() directive",
+    "ref() directive",
+    "cache() directive",
+    "guard() directive",
+    "live() directive",
+    "until() / asyncAppend() / asyncReplace() async directives",
+    "when() / choose() / map() / range() / join() template helpers",
+    "ifDefined() directive",
+    "unsafeHTML() / unsafeSVG() / unsafeMathML() directives",
+    "templateContent() directive",
+    "ReactiveController interface",
+    "ReactiveControllerHost interface",
+    "@lit/context (ContextProvider, ContextConsumer, createContext)",
+    "@lit/task (Task controller)",
+    "@lit/localize (localization utilities)",
+    "@lit/react (ReactiveElement React wrapper)"
+  ]
+}
