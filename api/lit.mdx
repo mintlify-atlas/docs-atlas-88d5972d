@@ -129,6 +129,39 @@ Base class for custom elements with reactive properties and attributes, without 
 
 See the `@lit/reactive-element` package for full documentation.
 
+## Environment
+
+### `isServer`
+
+```typescript
+import { isServer } from 'lit';
+// or directly:
+import { isServer } from 'lit/is-server.js';
+
+const isServer: boolean
+```
+
+A boolean that is `true` in server environments like Node.js (when the `"node"` export condition is active) and `false` in browser environments. Use this to guard browser-only code when authoring SSR-compatible components:
+
+```typescript
+import { LitElement, html } from 'lit';
+import { isServer } from 'lit';
+
+class MyElement extends LitElement {
+  connectedCallback() {
+    super.connectedCallback();
+    if (!isServer) {
+      // Only runs in the browser
+      window.addEventListener('resize', this._onResize);
+    }
+  }
+}
+```
+
+<Note>
+  Your server environment or toolchain must support the `"node"` export condition for `isServer` to be `true` on the server.
+</Note>
+
 ## Sentinels
 
 ### `noChange`
@@ -179,3 +212,20 @@ All types from `lit-element` and `lit-html` are re-exported. Commonly used types
 | `ReactiveControllerHost` | Interface implemented by `ReactiveElement`. |
 | `ComplexAttributeConverter` | Interface for custom attribute converters. |
 | `HasChanged` | Function type `(value, old) => boolean` for change detection. |
+| `notEqual` | Default `hasChanged` implementation: `!Object.is(value, old)`. |
+| `defaultConverter` | Default attribute ↔ property converter (handles `String`, `Number`, `Boolean`, `Object`, `Array`). |
+
+## Additional entry points
+
+The `lit` package exposes several sub-entry points beyond the main `lit` import:
+
+| Entry point | Contents |
+|---|---|
+| `lit/decorators.js` | All decorators: `customElement`, `property`, `state`, `query`, `queryAll`, `queryAsync`, `queryAssignedElements`, `queryAssignedNodes`, `eventOptions` |
+| `lit/directives/*.js` | Individual directives (e.g., `lit/directives/class-map.js`) |
+| `lit/async-directive.js` | `AsyncDirective` base class |
+| `lit/directive.js` | `Directive`, `directive()`, `PartType` |
+| `lit/directive-helpers.js` | `insertPart`, `removePart`, `setChildPartValue`, `isPrimitive`, `isTemplateResult`, `isDirectiveResult` |
+| `lit/static-html.js` | Static template tags: `html`, `svg`, `mathml`, `literal`, `unsafeStatic` |
+| `lit/is-server.js` | `isServer` boolean |
+| `lit/polyfill-support.js` | Polyfill support for ShadyDOM/ShadyCSS environments |

@@ -155,21 +155,34 @@ The `svg` tag is for SVG *fragments* — content that belongs *inside* an `<svg>
 
 ## The static `html` tag
 
-For rare cases where you need to include truly static, dynamic markup (such as a variable tag name or attribute name), import `html` from `lit/static-html.js`:
+For rare cases where you need dynamic tag names or attribute names, import `html` from `lit/static-html.js`. This module provides HTML, SVG, and MathML template tags that support static value interpolation.
 
 ```typescript
-import { html, literal } from 'lit/static-html.js';
+import { html, literal, unsafeStatic } from 'lit/static-html.js';
 
+// literal — only accepts tagged literal strings (type-safe)
 const tag = literal`div`;
-
 const result = html`<${tag} class="box">content</${tag}>`;
+
+// unsafeStatic — accepts any string (for developer-controlled values)
+const tagName = getTagName(); // must be trusted, developer-controlled
+const result2 = html`<${unsafeStatic(tagName)}>content</${unsafeStatic(tagName)}>`;
 ```
 
+| Export | Description |
+|--------|-------------|
+| `html` | Static-aware `html` tag (import from `lit/static-html.js`) |
+| `svg` | Static-aware `svg` tag |
+| `mathml` | Static-aware `mathml` tag |
+| `literal` | Tags a template literal as a static value — only accepts other `literal` results |
+| `unsafeStatic` | Wraps a string so it's treated as static markup — use only with trusted content |
+| `withStatic` | Wraps any core tag function to add static support |
+
 <Warning>
-`literal` values must come from developer-controlled, trusted sources. They are injected directly into the template string before parsing, so accepting user input here is an XSS risk.
+Static values (`literal` and `unsafeStatic`) are injected directly into the template string before parsing, creating a new template each time the static value changes. Only use with developer-controlled, trusted values — never with user input.
 </Warning>
 
-Don't use `literal` for ordinary dynamic content — standard `html` binding expressions handle that safely and efficiently.
+Don't use static templates for ordinary dynamic content — standard `html` binding expressions handle that safely and efficiently.
 
 ## Composing templates
 

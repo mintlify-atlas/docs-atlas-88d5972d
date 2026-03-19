@@ -149,7 +149,7 @@ export const notEqual: HasChanged = (value: unknown, old: unknown): boolean =>
   !Object.is(value, old);
 ```
 
-Override `hasChanged` for deep equality on objects or arrays:
+Override `hasChanged` for deep equality checks on objects or arrays:
 
 ```typescript
 @property({

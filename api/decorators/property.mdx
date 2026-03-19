@@ -47,8 +47,7 @@ property(options?: PropertyDeclaration): PropertyDecorator
 
 <ParamField path="hasChanged" type="(value: T, oldValue: T) => boolean">
   A function that determines whether a property change should trigger an
-  update. By default, uses strict inequality (`!==`). Return `true` to
-  request an update.
+  update. By default, uses `notEqual` which is `!Object.is(value, oldValue)` — stricter than `!==` because it handles `NaN` correctly. Return `true` to request an update.
 </ParamField>
 
 <ParamField path="noAccessor" type="boolean" default="false">

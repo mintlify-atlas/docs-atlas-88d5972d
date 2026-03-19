@@ -280,6 +280,32 @@ html`${join(navItems, html`<span> / </span>`)}`
 
 ---
 
+## Keyed rendering
+
+### `keyed()`
+
+Associates a renderable value with a unique key. When the key changes, the previous DOM is removed and a fresh instance is created, even if the template shape is the same.
+
+**Import:** `lit/directives/keyed.js`
+
+**Signature:**
+```typescript
+export const keyed: <V>(k: unknown, v: V) => DirectiveResult
+```
+
+```typescript
+import {keyed} from 'lit/directives/keyed.js';
+
+// Forces a fresh element to be created whenever userId changes
+html`${keyed(this.userId, html`<user-card .userId=${this.userId}></user-card>`)}`
+```
+
+<Note>
+  `keyed()` is useful when you need to force re-creation of a stateful element (e.g. to reset internal state) when a key value changes, rather than reusing and updating the existing DOM.
+</Note>
+
+---
+
 ## Refs
 
 ### `ref()`

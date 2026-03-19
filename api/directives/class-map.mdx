@@ -38,9 +38,9 @@ interface ClassInfo {
 ## Constraints
 
 <Warning>
-  `classMap` must be used in the `class` attribute and must be the **only** expression in that attribute. Mixing `classMap` with other interpolations in the same `class` attribute will throw an error.
+  `classMap` must be used in the `class` attribute and must be the **only dynamic expression** in that attribute. Placing two `classMap` calls or another interpolation alongside it in the same `class` attribute will throw a runtime error.
 
-  Static classes written directly in the attribute string (e.g., `class="base ${classMap(...)}"`) are preserved and never modified by the directive.
+  Static class strings written directly before or after the expression (e.g., `class="base ${classMap(...)}"`) are allowed and preserved — the directive tracks which classes it owns and leaves the rest untouched.
 </Warning>
 
 ## Example
